@@ -3,6 +3,7 @@ using System.Collections.Generic;
 using System.IO;
 using System.Linq;
 using System.Net;
+using System.Reflection;
 using System.Security.Cryptography.X509Certificates;
 using System.Threading;
 using CommandLine;
@@ -43,11 +44,10 @@ namespace horizon_cli
         }
         static HorizonServer server;
         static HorizonClient client;
+        private static string build = Assembly.GetExecutingAssembly().GetName().Version.ToString();
         static void Main(string[] args)
         {
-            Console.WriteLine("horizon - high performance WebSocket tunnels");
-
-            if (args.Length == 0) args = Console.ReadLine().Split(" ");
+            Console.WriteLine($"Horizon {build} - high performance WebSocket tunnels");
 
             Console.CancelKeyPress += ConsoleOnCancelKeyPress;
 
@@ -56,7 +56,7 @@ namespace horizon_cli
                 if (o.About)
                 {
                     Console.WriteLine("             ^^                   @@@@@@@@@\r\n       ^^       ^^            @@@@@@@@@@@@@@@\r\n                            @@@@@@@@@@@@@@@@@@              ^^\r\n                           @@@@@@@@@@@@@@@@@@@@\r\n ~~~~ ~~ ~~~~~ ~~~~~~~~ ~~ &&&&&&&&&&&&&&&&&&&& ~~~~~~~ ~~~~~~~~~~~ ~~~\r\n ~         ~~   ~  ~       ~~~~~~~~~~~~~~~~~~~~ ~       ~~     ~~ ~\r\n   ~      ~~      ~~ ~~ ~~  ~~~~~~~~~~~~~ ~~~~  ~     ~~~    ~ ~~~  ~ ~~\r\n   ~  ~~     ~         ~      ~~~~~~  ~~ ~~~       ~~ ~ ~~  ~~ ~\r\n ~  ~       ~ ~      ~           ~~ ~~~~~~  ~      ~~  ~             ~~\r\n       ~             ~        ~      ~      ~~   ~             ~\r\n\r\n");
-                    Console.WriteLine("Horizon is powered by encodeous/wstream (https://github.com/encodeous/wstream)\n" +
+                    Console.WriteLine($"Horizon {build} is powered by encodeous/wstream (https://github.com/encodeous/wstream)\n" +
                                       "and ninjasource/Ninja.Websockets (https://github.com/ninjasource/Ninja.WebSockets)." +
                                       "\n" +
                                       "horizon-cli uses the wonderful Command Line Parser Library at\n" +
