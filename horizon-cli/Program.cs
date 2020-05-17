@@ -17,17 +17,17 @@ namespace horizon_cli
     {
         public class Options
         {
-            [Option('a', "about", Required = false, HelpText = "About horizon")]
+            [Option('a', "about", Required = false, HelpText = "About Horizon")]
             public bool About { get; set; }
 
-            [Option('s', "server", Required = false, HelpText = "[Server] Start horizon as a server")]
+            [Option('s', "server", Required = false, HelpText = "[Server] Start Horizon as a server")]
             public bool Server { get; set; }
             [Option('q', "authfile", Required = false, HelpText = "[Server] Specify a custom path to an auth file")]
             public string AuthFile { get; set; }
             [Option('p', "port", Required = false, HelpText = "[Server] Specify a port to listen to")]
             public int Port { get; set; }
 
-            [Option('c', "client", Required = false, HelpText = "[Client] Start horizon as a client and connect to the specified horizon server --client <uri>")]
+            [Option('c', "client", Required = false, HelpText = "[Client] Start Horizon as a client and connect to the specified Horizon server --client <uri>")]
             public string Client { get; set; }
             [Option('m', "portmap", Required = false, HelpText = "[Client] Maps local ports to remote addresses. <port>:<remote_server>:<port> Example: 22:ssh.example.com:22")]
             public string PortMap { get; set; }
@@ -44,10 +44,9 @@ namespace horizon_cli
         }
         static HorizonServer server;
         static HorizonClient client;
-        private static string build = Assembly.GetExecutingAssembly().GetName().Version.ToString();
         static void Main(string[] args)
         {
-            Console.WriteLine($"Horizon {build} - high performance WebSocket tunnels");
+            Console.WriteLine($"Horizon - high performance WebSocket tunnels");
 
             Console.CancelKeyPress += ConsoleOnCancelKeyPress;
 
@@ -56,7 +55,7 @@ namespace horizon_cli
                 if (o.About)
                 {
                     Console.WriteLine("             ^^                   @@@@@@@@@\r\n       ^^       ^^            @@@@@@@@@@@@@@@\r\n                            @@@@@@@@@@@@@@@@@@              ^^\r\n                           @@@@@@@@@@@@@@@@@@@@\r\n ~~~~ ~~ ~~~~~ ~~~~~~~~ ~~ &&&&&&&&&&&&&&&&&&&& ~~~~~~~ ~~~~~~~~~~~ ~~~\r\n ~         ~~   ~  ~       ~~~~~~~~~~~~~~~~~~~~ ~       ~~     ~~ ~\r\n   ~      ~~      ~~ ~~ ~~  ~~~~~~~~~~~~~ ~~~~  ~     ~~~    ~ ~~~  ~ ~~\r\n   ~  ~~     ~         ~      ~~~~~~  ~~ ~~~       ~~ ~ ~~  ~~ ~\r\n ~  ~       ~ ~      ~           ~~ ~~~~~~  ~      ~~  ~             ~~\r\n       ~             ~        ~      ~      ~~   ~             ~\r\n\r\n");
-                    Console.WriteLine($"Horizon {build} is powered by encodeous/wstream (https://github.com/encodeous/wstream)\n" +
+                    Console.WriteLine($"Horizon is powered by encodeous/wstream (https://github.com/encodeous/wstream)\n" +
                                       "and ninjasource/Ninja.Websockets (https://github.com/ninjasource/Ninja.WebSockets)." +
                                       "\n" +
                                       "horizon-cli uses the wonderful Command Line Parser Library at\n" +
@@ -69,7 +68,7 @@ namespace horizon_cli
                     new AuthGen().Generate();
                 } else if (o.Server)
                 {
-                    Console.WriteLine("Running horizon in server mode.");
+                    Console.WriteLine("Running Horizon in server mode.");
 
                     if (o.AuthFile == null)
                     {
