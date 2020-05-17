@@ -15,10 +15,4 @@
     <ProjectReference Include="..\horizon\horizon.csproj" />
   </ItemGroup>
 
-  <ItemGroup>
-    <Reference Include="wstreamlib">
-      <HintPath>..\..\wstream\wstream\wstreamlib\bin\Release\netcoreapp3.1\wstreamlib.dll</HintPath>
-    </Reference>
-  </ItemGroup>
-
 </Project>
