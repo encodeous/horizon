@@ -1,0 +1,14 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+  <PropertyGroup>
+    <TargetFramework>netcoreapp3.1</TargetFramework>
+    <AllowUnsafeBlocks>true</AllowUnsafeBlocks>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <Reference Include="wstreamlib">
+      <HintPath>..\..\wstream\wstream\wstreamlib\bin\Release\netcoreapp3.1\wstreamlib.dll</HintPath>
+    </Reference>
+  </ItemGroup>
+
+</Project>

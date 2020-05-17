@@ -1,0 +1,24 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+  <PropertyGroup>
+    <OutputType>Exe</OutputType>
+    <TargetFramework>netcoreapp3.1</TargetFramework>
+    <RootNamespace>horizon_cli</RootNamespace>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <PackageReference Include="CommandLineParser" Version="2.8.0" />
+    <PackageReference Include="Newtonsoft.Json" Version="12.0.3" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <ProjectReference Include="..\horizon\horizon.csproj" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <Reference Include="wstreamlib">
+      <HintPath>..\..\wstream\wstream\wstreamlib\bin\Release\netcoreapp3.1\wstreamlib.dll</HintPath>
+    </Reference>
+  </ItemGroup>
+
+</Project>
