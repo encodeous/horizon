@@ -12,7 +12,7 @@ Horizon is a _gateway_ that allows a client to map a remote tcp resource to a lo
 
 Horizon is useful if either end of the connection is _restricted_ to HTTP/S connections (like behind a firewall).
 
-For example, if you want to access a FTP server through a _Firewall_ , Horizon can _Obfuscate_ the ssh data through WebSockets and on the server, Horizon will _mirror_ the data sent by the client and connect to the FTP server as if the client was directly connecting to it.
+For example, if you want to access a SSH server through a _Firewall_ , Horizon can _Obfuscate_ the SSH data through WebSockets and on the server, Horizon will _mirror_ the data sent by the client and connect to the SSH server as if the client was directly connecting to it.
 
 ### Main Features
 - Access a resource through a **firewall**
