@@ -1,25 +1,29 @@
-# Horizon - High performance Custom TCP Proxy and Port Tunneling over WebSockets.
+# Horizon - High performance TCP Proxy and Port Tunneling over WebSockets.
 
-## What is Horizon?
+![Banner](https://raw.githubusercontent.com/encodeous/horizon/master/banner.png)
+
+## About Horizon
+
+[![Build status](https://ci.appveyor.com/api/projects/status/mpqu71a30820p88d/branch/master?svg=true)](https://ci.appveyor.com/project/Encodeous/horizon/branch/master) | **[Quick Download](https://github.com/encodeous/horizon/releases)**
 
 Horizon is a _gateway_ that allows a client to map a remote tcp resource to a local port through a _proxy_ server.
 
-### What can Horizon do?
+### Functionality
 
 Horizon is useful if either end of the connection is _restricted_ to HTTP/S connections (like behind a firewall).
 
-For example, if you want to access a FTP server through a _Firewall_ , Horizon can _Obfuscate_ the ssh data through WebSockets and on the server, Horizon will _mirror_ the data sent by the client and connect to the FTP server as if the client was directly connecting to it.
+For example, if you want to access a SSH server through a _Firewall_ , Horizon can _Obfuscate_ the SSH data through WebSockets and on the server, Horizon will _mirror_ the data sent by the client and connect to the SSH server as if the client was directly connecting to it.
 
 ### Main Features
 - Access a resource through a **firewall**
-- **Blazingly fast**! (Tested to handle ~5gbps with iperf)
+- **Blazingly fast**! (Tested to handle ~5Gbit/s with iperf)
 - Built in **Authentication** (With an intuitive configuration wizard)
 - **Simple to use** Command Line Interface
 - Supports both **Windows** and **Linux**
 - Portable, **no dependencies**
 - _Could_ tunnel through **CDNs** like **CloudFlare** _(Not Officially Supported)_
 
-## Great! This sounds like just what I need, how can I use it?
+## Getting Started
 
 Horizon has a simple cli, the commands are as follows:
 
