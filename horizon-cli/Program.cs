@@ -54,10 +54,14 @@ namespace horizon_cli
         static HorizonServer server;
         static HorizonClient client;
 
+
         static void Main(string[] args)
         {
+#if DEBUG
+            Logger.Level = Logger.LoggingLevel.Debug;
+#endif
             Console.WriteLine(
-                " |-------------------------------------------------------------------------------------| \n" + 
+                " |-------------------------------------------------------------------------------------| \n" +
                 " |                    Horizon | High Performance WebSocket Tunnels                     | \n" +
                 " |                     [To view help, execute Horizon with --help]                     | \n" +
                 " |             View the project at (https://github.com/encodeous/horizon)              | \n" +
@@ -150,6 +154,7 @@ namespace horizon_cli
                         Console.WriteLine($"Unrecognized Url Scheme \"{s}\". Valid schemes are (http/s, ws/s)");
                         return;
                     }
+
                     if (o.PortMap == null)
                     {
                         Console.WriteLine("Horizon Client requires a port map.");
@@ -163,26 +168,35 @@ namespace horizon_cli
                         o.Token = "horizon";
                     }
 
-                    string[] k = o.PortMap.Split(":");
-                    var lep = new IPEndPoint(IPAddress.Any, int.Parse(k[0]));
+                    var k = o.PortMap.Split(":");
 
-                    client = new HorizonClient(new Uri(o.Client), k[1], int.Parse(k[2]));
-                    if (o.BufferSize != 0)
+                    var localEp = new IPEndPoint(IPAddress.Any, int.Parse(k[0]));
+
+                    client = new HorizonClient(new Uri(o.Client), k[1], int.Parse(k[2]), o.Username, o.Token);
+
+                    var ping = client.Ping();
+
+                    if (ping.Success)
                     {
-                        client.OpenTunnel(lep, o.Username, o.Token,
-                            new HorizonOptions() {DefaultBufferSize = o.BufferSize});
+                        Console.WriteLine($"Pinged server, Latency: ({ping.Latency.TotalMilliseconds} ms).");
                     }
                     else
                     {
-                        client.OpenTunnel(lep, o.Username, o.Token, new HorizonOptions());
+                        Console.WriteLine($"Could not ping server, double check the username/token or the server uri.");
+                        return;
                     }
 
+                    client.OpenTunnel(localEp,
+                        o.BufferSize != 0
+                            ? new HorizonOptions {DefaultBufferSize = o.BufferSize}
+                            : new HorizonOptions());
                     Console.WriteLine($"Horizon started | {o.Username}@ [{o.PortMap}] = > [{o.Client}].");
                     Thread.Sleep(-1);
                 }
                 else
                 {
-                    Console.WriteLine(" -                          [Press Any Key to exit...]                                 - ");
+                    Console.WriteLine(
+                        " -                          [Press Any Key to exit...]                                 - ");
                     Console.ReadKey();
                 }
             });

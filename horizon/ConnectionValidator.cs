@@ -29,7 +29,7 @@ namespace horizon
             var ts = DateTime.UtcNow - clientRequest.RequestTime;
             if (ts >= TimeSpan.FromMinutes(2))
             {
-                $"{clientRequest.UserId} has failed to connect, the access token is expired".Log();
+                $"{clientRequest.UserId} has failed to connect, the access token is expired".Log(Logger.LoggingLevel.Info);
                 return null;
             }
 
@@ -54,7 +54,7 @@ namespace horizon
                             }
                             else
                             {
-                                $"{clientRequest.UserId} has failed to connect, the access token is invalid".Log();
+                                $"{clientRequest.UserId} has failed to connect, the access token is invalid".Log(Logger.LoggingLevel.Info);
                                 return null;
                             }
                         }
@@ -67,7 +67,7 @@ namespace horizon
                 }
 
             }
-            $"{clientRequest.UserId} has failed to connect, username not found".Log();
+            $"{clientRequest.UserId} has failed to connect, username not found".Log(Logger.LoggingLevel.Info);
             return null;
         }
 
@@ -77,7 +77,7 @@ namespace horizon
             if (!user.AllowAnyPort && (!user.AllowedRemotePorts.Contains(clientRequest.RequestedPort) ||
                                        user.DisallowedRemotePorts.Contains(clientRequest.RequestedPort)))
             {
-                $"{clientRequest.UserId} has failed to connect, unauthorized port [{clientRequest.RequestedHost}:{clientRequest.RequestedPort}]".Log();
+                $"{clientRequest.UserId} has failed to connect, unauthorized port [{clientRequest.RequestedHost}:{clientRequest.RequestedPort}]".Log(Logger.LoggingLevel.Info);
                 return false;
             }
 
@@ -94,13 +94,13 @@ namespace horizon
                          user.DisallowedRemoteServers.Contains(domain)))
                     {
                     
-                        $"{clientRequest.UserId} has failed to connect, unauthorized host [{clientRequest.RequestedHost}:{clientRequest.RequestedPort}]".Log();
+                        $"{clientRequest.UserId} has failed to connect, unauthorized host [{clientRequest.RequestedHost}:{clientRequest.RequestedPort}]".Log(Logger.LoggingLevel.Info);
                         return false;
                     }
                 }
                 catch
                 {
-                    $"{clientRequest.UserId} has failed to connect, unauthorized host [{clientRequest.RequestedHost}:{clientRequest.RequestedPort}]".Log();
+                    $"{clientRequest.UserId} has failed to connect, unauthorized host [{clientRequest.RequestedHost}:{clientRequest.RequestedPort}]".Log(Logger.LoggingLevel.Info);
                     return false;
                 }
             }
@@ -171,6 +171,7 @@ namespace horizon
                 }
             }
         }
+
         [ReliabilityContract(Consistency.WillNotCorruptState, Cer.MayFail)]
         internal static unsafe bool FastCmp(byte[] ba, byte[] bb)
         {

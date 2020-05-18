@@ -105,45 +105,58 @@ namespace horizon
         {
             while (!_stopToken.IsCancellationRequested)
             {
-                var conn = await serverInstance.AcceptConnectionAsync().ConfigureAwait(false);
-                if (conn.Connected)
+                try
                 {
-                    try
+                    var conn = await serverInstance.AcceptConnectionAsync().ConfigureAwait(false);
+                    if (conn.Connected)
                     {
-                        (bool, HorizonRequest) request = ProtocolManager.PerformServerHandshake(conn, connectionValidator);
-                        if (request.Item1 && request.Item2 != null)
+                        try
                         {
-                            if (!OpenConnection(request.Item2, conn))
+                            (bool, HorizonRequest) request = ProtocolManager.PerformServerHandshake(conn, connectionValidator);
+                            if (request.Item1 && request.Item2 != null)
+                            {
+                                if (request.Item2.PingPacket)
+                                {
+                                    var time = DateTime.UtcNow - request.Item2.RequestTime;
+                                    $"Client {request.Item2.UserId} has pinged. Latency {time.TotalMilliseconds} ms".Log(Logger.LoggingLevel.Debug);
+                                }
+                                else
+                                {
+                                    OpenConnection(request.Item2, conn);
+                                }
+                            }
+                            else
                             {
                                 conn.Close();
                             }
                         }
-                        else
+                        catch
                         {
                             conn.Close();
                         }
                     }
-                    catch
-                    {
-                        conn.Close();
-                    }
+                }
+                catch(Exception e)
+                {
+                    "Failed accepting client.".Log(Logger.LoggingLevel.Severe);
+                    $"{e.Message} {e.StackTrace}".Log(Logger.LoggingLevel.Verbose);
                 }
             }
         }
 
-        private bool OpenConnection(HorizonRequest request, WsConnection connection)
+        private void OpenConnection(HorizonRequest request, WsConnection connection)
         {
             try
             {
                 var sock = new Socket(AddressFamily.InterNetwork, SocketType.Stream, ProtocolType.Tcp);
                 sock.Connect(request.RequestedHost, request.RequestedPort);
-                ioManager.AddIoConnection(connection, sock, request); 
-                return true;
+                ioManager.AddIoConnection(connection, sock, request);
             }
             catch(Exception e)
             {
-                $"Failed to open connection to remote: {e.Message} {e.StackTrace}".Log();
-                return false;
+                $"Failed to open connection to remote {request.RequestedHost}:{request.RequestedPort}".Log(Logger.LoggingLevel.Severe);
+                $"{e.Message} {e.StackTrace}".Log(Logger.LoggingLevel.Verbose);
+                connection.Close();
             }
         }
 

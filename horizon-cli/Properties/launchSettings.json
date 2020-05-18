@@ -1,7 +1,8 @@
 {
   "profiles": {
     "horizon-cli": {
-      "commandName": "Project"
+      "commandName": "Project",
+      "commandLineArgs": "-c ws://localhost:1234 -m 1233:localhost:1235"
     }
   }
 }

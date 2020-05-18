@@ -12,17 +12,32 @@ namespace horizon
     public class HorizonClient
     {
         public IoManager ioManager;
-        private string tunnelDestination;
-        private int tunnelDestinationPort;
-        private Uri horizonHost;
+        private string _tunnelDestination;
+        private int _tunnelDestinationPort;
+        private Uri _horizonHost;
         private bool stopFlag = false;
-        private Socket localSock;
+        private Socket _localSock;
+        private string _userId;
+        private string _userToken;
 
-        public HorizonClient(Uri horizonHost, string destination, int port)
+        public HorizonClient(Uri horizonHost, string destination, int port, string userId, string userToken)
         {
-            this.horizonHost = horizonHost;
-            tunnelDestination = destination;
-            tunnelDestinationPort = port;
+            _userId = userId;
+            _userToken = userToken;
+            _horizonHost = horizonHost;
+            _tunnelDestination = destination;
+            _tunnelDestinationPort = port;
+        }
+        /// <summary>
+        /// Pings the server to check credentials and latency
+        /// </summary>
+        /// <returns></returns>
+        public PingResult Ping()
+        {
+            WStream client = new WStream();
+            var connection = client.Connect(_horizonHost, CancellationToken.None);
+            var s = AuthenticatePing(connection, out var latency);
+            return new PingResult(){Latency = latency, Success = s};
         }
 
         /// <summary>
@@ -32,13 +47,13 @@ namespace horizon
         /// <param name="userId"></param>
         /// <param name="token"></param>
         /// <param name="ioConfig"></param>
-        public void OpenTunnel(EndPoint localBinding, string userId, string token, HorizonOptions ioConfig)
+        public void OpenTunnel(EndPoint localBinding, HorizonOptions ioConfig)
         {
             ioManager = new IoManager(ioConfig);
-            localSock = new Socket(AddressFamily.InterNetwork, SocketType.Stream, ProtocolType.Tcp);
-            localSock.Bind(localBinding);
-            localSock.Listen(1000);
-            new Thread(() => SocketListener(userId, token)).Start();
+            _localSock = new Socket(AddressFamily.InterNetwork, SocketType.Stream, ProtocolType.Tcp);
+            _localSock.Bind(localBinding);
+            _localSock.Listen(1000);
+            new Thread(SocketListener).Start();
         }
 
         /// <summary>
@@ -49,49 +64,82 @@ namespace horizon
             ioManager.Stop();
         }
 
-        private void SocketListener(string userId, string token)
+        private void SocketListener()
         {
             while (!stopFlag)
             {
-                var sock = localSock.Accept();
-                Connect(userId, token, sock);
+                try
+                {
+                    var sock = _localSock.Accept();
+                    Connect( sock);
+                }
+                catch
+                {
+                    "Failed to accept local client".Log(Logger.LoggingLevel.Severe);
+                }
             }
         }
 
-        private void Connect(string userId, string token, Socket _localSock)
+        private void Connect(Socket localSock)
         {
-            WStream client = new WStream();
-            var connection = client.Connect(horizonHost, CancellationToken.None);
-            if (Authenticate(userId, token, connection, out var req))
+            try
             {
-                ioManager.AddIoConnection(connection, _localSock, req);
+                WStream client = new WStream();
+                var connection = client.Connect(_horizonHost, CancellationToken.None);
+                if (Authenticate(connection, out var req))
+                {
+                    ioManager.AddIoConnection(connection, localSock, req);
+                }
+                else
+                {
+                    connection.Close();
+                    localSock.Disconnect(false);
+                }
             }
-            else
+            catch
             {
-                connection.Close();
-                _localSock.Disconnect(false);
+                localSock.Disconnect(false);
+                throw;
             }
         }
 
-        private bool Authenticate(string userId, string token, WsConnection connection, out HorizonRequest req)
+        private bool Authenticate(WsConnection connection, out HorizonRequest req)
         {
             var request = new HorizonRequest
             {
-                RequestedHost = tunnelDestination,
-                RequestedPort = tunnelDestinationPort,
-                UserId = userId.ToLower().Trim(),
+                RequestedHost = _tunnelDestination,
+                RequestedPort = _tunnelDestinationPort,
+                UserId = _userId.ToLower().Trim(),
                 RequestTime = DateTime.UtcNow,
             };
-            if (ProtocolManager.PerformClientHandshake(connection, token, request))
+            req = request;
+            if (ProtocolManager.PerformClientHandshake(connection, _userToken, request))
             {
-                req = request;
                 return true;
             }
-            else
+            return false;
+        }
+
+        private bool AuthenticatePing(WsConnection connection, out TimeSpan latency)
+        {
+            var request = new HorizonRequest
             {
-                req = request;
-                return false;
+                RequestedHost = _tunnelDestination,
+                RequestedPort = _tunnelDestinationPort,
+                UserId = _userId.ToLower().Trim(),
+                RequestTime = DateTime.UtcNow,
+                PingPacket = true
+            };
+            var response = ProtocolManager.PerformClientPing(connection, _userToken, request);
+
+            latency = response - request.RequestTime;
+
+            if (response != DateTime.MinValue)
+            {
+                return true;
             }
+
+            return false;
         }
     }
 }

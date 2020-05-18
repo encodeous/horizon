@@ -28,8 +28,8 @@ namespace horizontester
 
         public static void Client()
         {
-            HorizonClient hzc = new HorizonClient(new Uri("ws://localhost:1234"), "localhost", 1235);
-            hzc.OpenTunnel(new IPEndPoint(IPAddress.Any, 1233), "encodeous", "encodeous123", new HorizonOptions());
+            HorizonClient hzc = new HorizonClient(new Uri("ws://localhost:1234"), "localhost", 1235, "encodeous", "encodeous123");
+            hzc.OpenTunnel(new IPEndPoint(IPAddress.Any, 1233), new HorizonOptions());
         }
         public static void Server()
         {

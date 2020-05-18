@@ -24,6 +24,14 @@ namespace horizon
         /// </summary>
         public byte[] Salt;
 
+        /// <summary>
+        /// The time the request was generated
+        /// </summary>
         public DateTime RequestTime;
+
+        /// <summary>
+        /// Identifies as true if the packet is a ping request
+        /// </summary>
+        public bool PingPacket;
     }
 }

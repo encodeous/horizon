@@ -23,7 +23,7 @@ namespace horizon.Transport
 
         internal void IoDisconnectCallback(WsConnection connection, HorizonRequest request)
         {
-            $"{request.UserId} at {connection.RemoteEndPoint} has disconnected from {request.RequestedHost}:{request.RequestedPort}".Log();
+            $"{request.UserId} at {connection.RemoteEndPoint} has disconnected from {request.RequestedHost}:{request.RequestedPort}".Log(Logger.LoggingLevel.Info);
         }
 
         public void AddIoConnection(WsConnection wstream, Socket sock, HorizonRequest request)
@@ -31,7 +31,7 @@ namespace horizon.Transport
             var ioWorker = new IoWorker(Options, wstream, sock, request, StopToken);
             ioWorker.StoppedCallback += IoDisconnectCallback;
             ioWorker.Start();
-            $"{request.UserId} has connected from {wstream.RemoteEndPoint} to {request.RequestedHost}:{request.RequestedPort}".Log();
+            $"{request.UserId} has connected from {wstream.RemoteEndPoint} to {request.RequestedHost}:{request.RequestedPort}".Log(Logger.LoggingLevel.Info);
         }
 
         public void Stop()

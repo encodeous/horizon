@@ -27,10 +27,30 @@ namespace horizon
             ConnectionValidator.FillSecureToken(ref connectionRequest, token);
             WriteRequest(serverStream, connectionRequest);
             var serverResponse = ReadResponse(serverStream);
-            if (serverResponse == null) return false;
+            if (serverResponse == null)
+            {
+                $"Server rejected client. Double check the username and token.".Log(Logger.LoggingLevel.Severe);
+                return false;
+            }
             bool isValid = ConnectionValidator.VerifyServerResponse(token, connectionRequest, serverResponse);
             SendStatus(serverStream, isValid);
             return isValid;
+        }
+
+        public static DateTime PerformClientPing(WsConnection serverStream, string token, HorizonRequest connectionRequest)
+        {
+            ConnectionValidator.FillSecureToken(ref connectionRequest, token);
+            WriteRequest(serverStream, connectionRequest);
+            var serverResponse = ReadResponse(serverStream);
+            var responseTime = DateTime.UtcNow;
+            if (serverResponse == null)
+            {
+                $"Server rejected client ping. Double check the username and token.".Log(Logger.LoggingLevel.Severe);
+                return DateTime.MinValue;
+            }
+            bool isValid = ConnectionValidator.VerifyServerResponse(token, connectionRequest, serverResponse);
+            SendStatus(serverStream, isValid);
+            return isValid ? responseTime : DateTime.MinValue;
         }
 
         public static bool ReadStatus(WsConnection clientStream)
@@ -98,6 +118,12 @@ namespace horizon
             bool flag10 = ReadExactly(clientStream, userSalt);
             if (!flag10) return null;
             request.Salt = userSalt;
+
+            // Read Ping Packet
+            byte[] pingBytes = new byte[4];
+            bool flag10_1 = ReadExactly(clientStream, pingBytes);
+            if (!flag10_1) return null;
+            request.PingPacket = BitConverter.ToInt32(pingBytes) == 1;
             return request;
         }
 
@@ -127,6 +153,9 @@ namespace horizon
             // Write Salt
             serverStream.Write(BitConverter.GetBytes(request.Salt.Length));
             serverStream.Write(request.Salt);
+
+            // Write Ping Packet
+            serverStream.Write(BitConverter.GetBytes(request.PingPacket? 1 : 0));
         }
 
         public static void WriteResponse(WsConnection clientStream, HorizonResponse response)
