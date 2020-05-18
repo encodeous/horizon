@@ -1,0 +1,7 @@
+{
+  "profiles": {
+    "horizon-cli": {
+      "commandName": "Project"
+    }
+  }
+}

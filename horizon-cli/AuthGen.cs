@@ -26,12 +26,14 @@ namespace horizon_cli
             }
             while (true)
             {
-                Console.Write("Please choose an option:\n" +
-                              "a. Add New User\n" +
-                              "b. Remove User\n" +
-                              "c. List all Users\n" +
-                              "d. View a User's settings'\n" +
-                              "e. Save and Exit\n");
+                Console.Write(" #######[AuthGenerator]#######\n" +
+                              " # Please choose an option:  #\n" +
+                              " # a. Add New User           #\n" +
+                              " # b. Remove User            #\n" +
+                              " # c. List all Users         #\n" +
+                              " # d. View a User's settings #\n" +
+                              " # e. Save and Exit          #\n"+
+                              " #############################\n" );
                 Console.Write("Selection: ");
                 string s = Console.ReadLine()?.ToLower();
                 if (s.StartsWith("a"))
