@@ -1,4 +1,6 @@
-# Horizon - High performance Custom TCP Proxy and Port Tunneling over WebSockets.
+# Horizon - High performance TCP Proxy and Port Tunneling over WebSockets.
+
+![Banner](https://raw.githubusercontent.com/encodeous/horizon/master/banner.png)
 
 ## What is Horizon?
 
