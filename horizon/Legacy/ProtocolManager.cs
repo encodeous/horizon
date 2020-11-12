@@ -4,9 +4,9 @@ using System.Net.Sockets;
 using System.Text;
 using wstreamlib;
 
-namespace horizon
+namespace horizon.Legacy
 {
-    public static class ProtocolManager
+    internal static class ProtocolManager
     {
         public static (bool, HorizonRequest) PerformServerHandshake(WsConnection clientStream,
             ConnectionValidator validator)

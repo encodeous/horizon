@@ -6,8 +6,7 @@
   </PropertyGroup>
 
   <ItemGroup>
-    <PackageReference Include="Sodium.Core" Version="1.2.3" />
-    <PackageReference Include="wstreamlib" Version="1.1.0" />
+    <PackageReference Include="wstreamlib" Version="1.0.0" />
   </ItemGroup>
 
   <ItemGroup>

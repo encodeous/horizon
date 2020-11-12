@@ -2,6 +2,7 @@
 using System.Collections.Generic;
 using System.IO;
 using horizon;
+using horizon.Legacy;
 using Newtonsoft.Json;
 
 namespace horizon_cli

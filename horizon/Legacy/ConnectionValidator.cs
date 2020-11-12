@@ -5,67 +5,64 @@ using System.Runtime.ConstrainedExecution;
 using System.Security.Cryptography;
 using System.Text;
 
-namespace horizon
+namespace horizon.Legacy
 {
-    public class ConnectionValidator
+    /// <summary>
+    /// A class that handles authentication
+    /// </summary>
+    internal class ConnectionValidator
     {
-        // Server
+        /// <summary>
+        /// User ID to Permission Map
+        /// </summary>
         public Dictionary<string, UserPermission> uidMap = new Dictionary<string, UserPermission>();
-        private ConnectionValidator(List<UserPermission> perms)
+        /// <summary>
+        /// Initialize Server Side Authentication
+        /// </summary>
+        /// <param name="perms"></param>
+        public ConnectionValidator(List<UserPermission> perms)
         {
             foreach (var u in perms)
             {
                 uidMap.Add(u.UserId.ToLower().Trim(), u);
             }
         }
-
-        public static ConnectionValidator CreateServerConnectionValidator(List<UserPermission> permissions)
-        {
-            return new ConnectionValidator(permissions);
-        }
-
+        /// <summary>
+        /// Authenticate Client Tokens
+        /// </summary>
+        /// <param name="clientRequest"></param>
+        /// <returns></returns>
         public HorizonResponse HandleClientRequest(HorizonRequest clientRequest)
         {
-            var ts = DateTime.UtcNow - clientRequest.RequestTime;
-            if (ts >= TimeSpan.FromMinutes(2))
-            {
-                $"{clientRequest.UserId} has failed to connect, the access token is expired".Log(Logger.LoggingLevel.Info);
-                return null;
-            }
-
             if (uidMap.ContainsKey(clientRequest.UserId.ToLower().Trim()))
             {
                 // verify hash
-                using (SHA512 sha = new SHA512CryptoServiceProvider())
+                using SHA512 sha = new SHA512CryptoServiceProvider();
+                using MemoryStream ms = new MemoryStream();
+                ms.Write(Encoding.UTF32.GetBytes(uidMap[clientRequest.UserId.ToLower().Trim()].UserToken));
+                ms.Write(clientRequest.Salt);
+                ms.Write(BitConverter.GetBytes(clientRequest.RequestTime.ToBinary()));
+                byte[] hash = sha.ComputeHash(ms);
+                var val = VerifyClientPermissions(uidMap[clientRequest.UserId.ToLower().Trim()], clientRequest);
+
+                if (!val) return null; // User does not have permissions to perform this connection
+
+                if (FastCmp(hash, clientRequest.UserTokenHash))
                 {
-                    using (MemoryStream ms = new MemoryStream())
+                    var ts = DateTime.UtcNow - clientRequest.RequestTime;
+
+                    // Verify if token is expired
+                    if (ts >= TimeSpan.FromSeconds(30))
                     {
-                        ms.Write(Encoding.UTF32.GetBytes(uidMap[clientRequest.UserId.ToLower().Trim()].UserToken));
-                        ms.Write(clientRequest.Salt);
-                        ms.Write(BitConverter.GetBytes(clientRequest.RequestTime.ToBinary()));
-                        byte[] hash = sha.ComputeHash(ms);
-                        var val = VerifyClientPermissions(uidMap[clientRequest.UserId.ToLower().Trim()], clientRequest);
-
-                        if (val)
-                        {
-                            if (FastCmp(hash, clientRequest.UserTokenHash) && val)
-                            {
-                                return GenerateResponse(clientRequest.UserId.ToLower().Trim(), clientRequest);
-                            }
-                            else
-                            {
-                                $"{clientRequest.UserId} has failed to connect, the access token is invalid".Log(Logger.LoggingLevel.Info);
-                                return null;
-                            }
-                        }
-                        else
-                        {
-                            return null;
-                        }
-
+                        $"{clientRequest.UserId} has failed to connect, the access token is expired (30 seconds).".Log(Logger.LoggingLevel.Info);
+                        return null;
                     }
+                    // Client successfully connected
+                    return GenerateResponse(clientRequest.UserId.ToLower().Trim(), clientRequest);
                 }
 
+                $"{clientRequest.UserId} has failed to connect, the access token is invalid.".Log(Logger.LoggingLevel.Info);
+                return null;
             }
             $"{clientRequest.UserId} has failed to connect, username not found".Log(Logger.LoggingLevel.Info);
             return null;
@@ -111,67 +108,57 @@ namespace horizon
         private HorizonResponse GenerateResponse(string token, HorizonRequest request)
         {
             var response = new HorizonResponse();
-            using (RNGCryptoServiceProvider crng = new RNGCryptoServiceProvider())
-            {
-                using (SHA512 sha = new SHA512CryptoServiceProvider())
-                {
-                    using (MemoryStream ms = new MemoryStream())
-                    {
-                        ms.Write(Encoding.UTF32.GetBytes(token.ToLower().Trim()));
-                        byte[] salt = new byte[64];
-                        crng.GetBytes(salt);
-                        ms.Write(salt);
-                        ms.Write(BitConverter.GetBytes(request.RequestTime.ToBinary()));
-                        response.Salt = salt;
-                        response.ClientTokenHash = sha.ComputeHash(ms);
-                    }
-                }
-            }
+            using RNGCryptoServiceProvider crng = new RNGCryptoServiceProvider();
+            using SHA512 sha = new SHA512CryptoServiceProvider();
+            using MemoryStream ms = new MemoryStream();
+            ms.Write(Encoding.UTF32.GetBytes(token.ToLower().Trim()));
+            byte[] salt = new byte[64];
+            crng.GetBytes(salt);
+            ms.Write(salt);
+            ms.Write(BitConverter.GetBytes(request.RequestTime.ToBinary()));
+            response.Salt = salt;
+            response.ClientTokenHash = sha.ComputeHash(ms);
 
             return response;
         }
 
         public static void FillSecureToken(ref HorizonRequest request, string token)
         {
-            using (RNGCryptoServiceProvider crng = new RNGCryptoServiceProvider())
-            {
-                using (SHA512 sha = new SHA512CryptoServiceProvider())
-                {
-                    using (MemoryStream ms = new MemoryStream())
-                    {
-                        ms.Write(Encoding.UTF32.GetBytes(token.ToLower().Trim()));
-                        byte[] salt = new byte[64];
-                        crng.GetBytes(salt);
-                        ms.Write(salt);
-                        ms.Write(BitConverter.GetBytes(request.RequestTime.ToBinary()));
-                        request.Salt = salt;
-                        request.UserTokenHash = sha.ComputeHash(ms);
-                    }
-                }
-            }
+            using RNGCryptoServiceProvider crng = new RNGCryptoServiceProvider();
+            using SHA512 sha = new SHA512CryptoServiceProvider();
+            using MemoryStream ms = new MemoryStream();
+            ms.Write(Encoding.UTF32.GetBytes(token.ToLower().Trim()));
+            byte[] salt = new byte[64];
+            crng.GetBytes(salt);
+            ms.Write(salt);
+            ms.Write(BitConverter.GetBytes(request.RequestTime.ToBinary()));
+            request.Salt = salt;
+            request.UserTokenHash = sha.ComputeHash(ms);
         }
 
         public static bool VerifyServerResponse(string token, HorizonRequest clientRequest,
             HorizonResponse serverResponse)
         {
-            using (SHA512 sha = new SHA512CryptoServiceProvider())
+            using SHA512 sha = new SHA512CryptoServiceProvider();
+            using MemoryStream ms = new MemoryStream();
+            ms.Write(Encoding.UTF32.GetBytes(token.ToLower().Trim()));
+            if (FastCmp(clientRequest.Salt,serverResponse.Salt))
             {
-                using (MemoryStream ms = new MemoryStream())
-                {
-                    ms.Write(Encoding.UTF32.GetBytes(token.ToLower().Trim()));
-                    if (FastCmp(clientRequest.Salt,serverResponse.Salt))
-                    {
-                        return false;
-                    }
-
-                    ms.Write(serverResponse.Salt);
-                    ms.Write(BitConverter.GetBytes(clientRequest.RequestTime.ToBinary()));
-                    byte[] hashedBytes = sha.ComputeHash(ms);
-                    return FastCmp(hashedBytes, serverResponse.ClientTokenHash);
-                }
+                return false;
             }
+
+            ms.Write(serverResponse.Salt);
+            ms.Write(BitConverter.GetBytes(clientRequest.RequestTime.ToBinary()));
+            byte[] hashedBytes = sha.ComputeHash(ms);
+            return FastCmp(hashedBytes, serverResponse.ClientTokenHash);
         }
 
+        /// <summary>
+        /// Fast Binary Data Comparison
+        /// </summary>
+        /// <param name="ba"></param>
+        /// <param name="bb"></param>
+        /// <returns></returns>
         [ReliabilityContract(Consistency.WillNotCorruptState, Cer.MayFail)]
         internal static unsafe bool FastCmp(byte[] ba, byte[] bb)
         {

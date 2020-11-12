@@ -8,14 +8,14 @@ using System.Security.Cryptography.X509Certificates;
 using System.Text;
 using System.Threading;
 using System.Threading.Tasks;
-using horizon.Transport;
+using horizon.Legacy.Transport;
 using wstreamlib;
 
-namespace horizon
+namespace horizon.Legacy
 {
     public class HorizonServer
     {
-        public IoManager ioManager;
+        internal IoManager ioManager;
         private WStreamServer serverInstance;
         private ConnectionValidator connectionValidator;
 
@@ -27,7 +27,7 @@ namespace horizon
         public HorizonServer(List<UserPermission> permissionInfo)
         {
             serverInstance = new WStreamServer();
-            connectionValidator = ConnectionValidator.CreateServerConnectionValidator(permissionInfo);
+            connectionValidator = new ConnectionValidator(permissionInfo);
             _stopTokenSource = new CancellationTokenSource();
             _stopToken = _stopTokenSource.Token;
         }

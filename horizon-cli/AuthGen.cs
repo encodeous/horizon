@@ -4,6 +4,7 @@ using System.IO;
 using System.Linq;
 using System.Text;
 using horizon;
+using horizon.Legacy;
 
 namespace horizon_cli
 {

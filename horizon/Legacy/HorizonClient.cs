@@ -4,14 +4,14 @@ using System.Net;
 using System.Net.Sockets;
 using System.Text;
 using System.Threading;
-using horizon.Transport;
+using horizon.Legacy.Transport;
 using wstreamlib;
 
-namespace horizon
+namespace horizon.Legacy
 {
     public class HorizonClient
     {
-        public IoManager ioManager;
+        internal IoManager ioManager;
         private string _tunnelDestination;
         private int _tunnelDestinationPort;
         private Uri _horizonHost;

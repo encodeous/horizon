@@ -3,7 +3,7 @@ using System.Collections.Generic;
 using System.Net.Sockets;
 using System.Text;
 
-namespace horizon
+namespace horizon.Legacy
 {
     public class HorizonRequest
     {

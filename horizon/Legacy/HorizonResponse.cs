@@ -2,7 +2,7 @@
 using System.Collections.Generic;
 using System.Text;
 
-namespace horizon
+namespace horizon.Legacy
 {
     public class HorizonResponse
     {

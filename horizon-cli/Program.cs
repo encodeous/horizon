@@ -9,6 +9,7 @@ using System.Threading;
 using CommandLine;
 using CommandLine.Text;
 using horizon;
+using horizon.Legacy;
 
 namespace horizon_cli
 {
@@ -151,7 +152,7 @@ namespace horizon_cli
                     var s = Extensions.GetScheme(o.Client);
                     if (s != "http" && s != "https" && s != "ws" && s != "wss")
                     {
-                        Console.WriteLine($"Unrecognized Url Scheme \"{s}\". Valid schemes are (http/s, ws/s)");
+                        Console.WriteLine($"Unrecognized Url Scheme \"{s}\". Valid schemes are http(s) / ws(s)");
                         return;
                     }
 

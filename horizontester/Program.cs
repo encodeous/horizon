@@ -1,9 +1,14 @@
 ﻿using System;
 using System.Collections.Generic;
+using System.IO;
+using System.IO.Compression;
 using System.Net;
 using System.Net.Sockets;
+using System.Security.Cryptography;
 using System.Threading;
 using horizon;
+using horizon.Protocol;
+using horizon.Transport;
 
 namespace horizontester
 {
@@ -11,35 +16,38 @@ namespace horizontester
     {
         static void Main(string[] args)
         {
-            Console.WriteLine("Horizon v1.0 by Encodeous powered by wstream");
-            Console.WriteLine("[1] Host on localhost:1234 --(tunnel)> localhost:1235 via tcp.");
-            Console.WriteLine("[2] Client on localhost:1233 --(wstream)> localhost:1234 via tcp.");
-            string s = Console.ReadLine();
-            if (s.StartsWith("1"))
-            {
-                Server();
-            }
-            else
-            {
-                Client();
-            }
-            Thread.Sleep(-1);
-        }
+            using var ms = new MemoryStream();
+            HorizonTransformers transformerStack1 = new HorizonTransformers(ms, ms);
+            var enc = new EncryptionTransformer();
 
-        public static void Client()
-        {
-            HorizonClient hzc = new HorizonClient(new Uri("ws://localhost:1234"), "localhost", 1235, "encodeous", "encodeous123");
-            hzc.OpenTunnel(new IPEndPoint(IPAddress.Any, 1233), new HorizonOptions());
-        }
-        public static void Server()
-        {
-            List<UserPermission> users = new List<UserPermission>
+            var enc2 = new EncryptionTransformer();
+
+            enc2.CompleteEncryptionHandshake(enc.GetPublicKey());
+            enc.CompleteEncryptionHandshake(enc2.GetPublicKey());
+
+            transformerStack1.AddTransformer(enc);
+
+            BinaryAdapter b1 = new BinaryAdapter(transformerStack1);
+
+            for (int i = 1; i < 1000000; i++)
             {
-                new UserPermission() {Administrator = true, UserId = "encodeous", UserToken = "encodeous123"}
-            };
-            HorizonServer wsts = new HorizonServer(users);
-            wsts.Listen(new IPEndPoint(IPAddress.Any, 1234));
-            wsts.Start();
+                b1.WriteInt(i);
+            }
+            b1.Flush();
+            using var ms2 = new MemoryStream(ms.ToArray());
+
+            HorizonTransformers transformerStack2 = new HorizonTransformers(ms2, ms2);
+            transformerStack2.AddTransformer(enc2);
+            BinaryAdapter b2 = new BinaryAdapter(transformerStack2);
+
+            for (int i = 1; i < 1000000; i++)
+            {
+                var x = b2.ReadInt();
+                if (i != x)
+                {
+                    Console.WriteLine("Failed");
+                }
+            }
         }
     }
 }

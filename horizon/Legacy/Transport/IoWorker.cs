@@ -6,10 +6,13 @@ using System.Threading;
 using System.Threading.Tasks;
 using wstreamlib;
 
-namespace horizon.Transport
+namespace horizon.Legacy.Transport
 {
     internal class IoWorker
     {
+        // Connection A is the Websocket connection, and connection B is the socket connection
+
+
         private ArraySegment<byte> _privateAB;
         private ArraySegment<byte> _privateBA;
         private bool IsRunning;
@@ -20,6 +23,7 @@ namespace horizon.Transport
 
         public IoWorker(HorizonOptions opt, WsConnection wstream, Socket sock, HorizonRequest requestInfo, CancellationToken cancellationToken)
         {
+            // intialize internal transfer buffer
             _privateAB = new ArraySegment<byte>(new byte[opt.DefaultBufferSize]);
             _privateBA = new ArraySegment<byte>(new byte[opt.DefaultBufferSize]);
             conn_a = wstream;
@@ -32,6 +36,9 @@ namespace horizon.Transport
 
         public WorkerStoppedDelegate StoppedCallback;
 
+        /// <summary>
+        /// Start transferring data
+        /// </summary>
         public void Start()
         {
             IsRunning = true;
