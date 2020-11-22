@@ -20,9 +20,9 @@ namespace horizon.Transport
 
         // Synchronization
 
-        internal object _writeLock;
+        internal object _writeLock = new object();
 
-        internal object _readLock;
+        internal object _readLock = new object();
 
         public BinaryAdapter(HorizonTransformers transform)
         {

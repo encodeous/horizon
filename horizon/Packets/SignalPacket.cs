@@ -19,8 +19,8 @@ namespace horizon.Packets
         }
         public void SendPacket(BinaryAdapter adapter)
         {
-            adapter.WriteInt((int)PacketId);
             if(Value.HasValue) adapter.WriteInt(Value.Value);
+            adapter.Flush();
         }
     }
 }

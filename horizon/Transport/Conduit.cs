@@ -49,7 +49,7 @@ namespace horizon.Transport
         /// </summary>
         public CreateFiberCallback FiberCreate;
 
-        public Conduit(WsConnection rawWs, string token, bool useEncryption = true, int timeoutMilliseconds = 30000, int maxFibers = 1000)
+        public Conduit(WsConnection rawWs, string token, bool useEncryption = false, int timeoutMilliseconds = 30000, int maxFibers = 1000)
         {
             _wsConn = rawWs;
             _fibers = new Fiber[maxFibers];
@@ -77,6 +77,8 @@ namespace horizon.Transport
                 // Modify the transformer to allow seamless encryption
                 transformer.AddTransformer(enc);
             }
+
+            Connected = true;
             // Start Routing, Local Socket Checking and Heartbeat functions
             new Thread(Router).Start();
             new Thread(FiberChecker).Start();
@@ -220,7 +222,7 @@ namespace horizon.Transport
                 {
                     var id = _adapter.ReadInt();
                     // check if id is valid, and within the allowed range
-                    if (id >= 0 && id <= _fibers.Length) continue;
+                    if (id < 0 || id > _fibers.Length) continue;
                     var res = FiberCreate?.Invoke();
                     // make sure a malicious server/client cannot create a fiber on an input node
                     if (res != null)
@@ -334,8 +336,15 @@ namespace horizon.Transport
         /// <param name="id"></param>
         public void RemoveFiber(int id)
         {
-            _fibers[id].Disconnect();
-            SendPacket(new SignalPacket(PacketType.RemoveFiber, id));
+            try
+            {
+                _fibers[id].Disconnect();
+                SendPacket(new SignalPacket(PacketType.RemoveFiber, id));
+            }
+            catch
+            {
+
+            }
             _fibers[id] = null;
         }
         /// <summary>

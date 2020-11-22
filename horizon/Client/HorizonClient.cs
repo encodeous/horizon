@@ -1,5 +1,6 @@
 ﻿using System;
 using System.Collections.Generic;
+using System.Net;
 using System.Text;
 using System.Threading;
 using horizon.Transport;
@@ -40,7 +41,8 @@ namespace horizon.Client
                 }
                 else if (_config.ProxyConfig is HorizonProxyConfig proxcfg)
                 {
-
+                    var cd = new Conduit(wsconn, "default");
+                    var ipt = new HorizonInput(new IPEndPoint(IPAddress.Any, 500), cd);
                 }
             }
 
@@ -51,7 +53,7 @@ namespace horizon.Client
         {
             var adp = new BinaryAdapter(wsc);
 
-            return false;
+            return true;
         }
     }
 }

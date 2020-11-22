@@ -37,7 +37,6 @@ namespace horizon.Utilities
 
         public override void Flush()
         {
-            m_basestream.FlushFinalBlock();
             m_basestream.Flush();
         }
 
