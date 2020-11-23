@@ -14,8 +14,12 @@ namespace horizon.Transport
         // Server to connect to
         private string _hRemote;
         private int _hPort;
-        public HorizonOutput(string remote, int port, Conduit link)
+        private Conduit _hConduit;
+        private int _minBufferSize;
+        public HorizonOutput(string remote, int port, Conduit link, int minBuffer = 1 << 18)
         {
+            _minBufferSize = minBuffer;
+            _hConduit = link;
             _hRemote = remote;
             _hPort = port;
             // Register the Fiber Creation delegate
@@ -28,7 +32,7 @@ namespace horizon.Transport
             {
                 var sock = new Socket(SocketType.Stream, ProtocolType.Tcp);
                 sock.Connect(_hRemote, _hPort);
-                return new Fiber(new NetworkStream(sock));
+                return new Fiber(sock, _hConduit.Adapter._arrayPool.Rent(_minBufferSize), _hConduit);
             }
             catch
             {

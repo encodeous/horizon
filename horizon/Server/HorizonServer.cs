@@ -2,7 +2,9 @@
 using System.Collections.Generic;
 using System.Text;
 using System.Threading;
+using System.Threading.Tasks;
 using horizon.Transport;
+using horizon.Utilities;
 using wstreamlib;
 
 namespace horizon.Server
@@ -23,20 +25,16 @@ namespace horizon.Server
 
         public void Start()
         {
-            _wsServer.Listen(_config.Bind);
-            new Thread(AcceptThread).Start();
+            Task.Run(()=> _wsServer.Listen(_config.Bind));
+            _wsServer.ConnectionAddedEvent += AcceptConnections;
         }
 
-        private void AcceptThread()
+        private void AcceptConnections(WsConnection connection)
         {
-            while (true)
+            if (SecurityCheck(connection))
             {
-                var client = _wsServer.AcceptConnectionAsync().Result;
-                if (SecurityCheck(client))
-                {
-                    var cd = new Conduit(client, "default");
-                    HorizonOutput hzo = new HorizonOutput("localhost",80,cd);
-                }
+                var cd = new Conduit(connection);
+                HorizonOutput hzo = new HorizonOutput("localhost", 5000, cd);
             }
         }
 

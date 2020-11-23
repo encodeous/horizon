@@ -10,10 +10,6 @@ namespace horizon.Packets
     public enum PacketType
     {
         /// <summary>
-        /// Exchange public keys
-        /// </summary>
-        PublicKeyBroadcast,
-        /// <summary>
         /// Heartbeat packet
         /// </summary>
         Heartbeat,

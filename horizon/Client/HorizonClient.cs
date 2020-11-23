@@ -3,6 +3,7 @@ using System.Collections.Generic;
 using System.Net;
 using System.Text;
 using System.Threading;
+using System.Threading.Tasks;
 using horizon.Transport;
 using wstreamlib;
 
@@ -26,12 +27,12 @@ namespace horizon.Client
         /// Start and Connect the client to the server
         /// </summary>
         /// <returns>Returns true if the client was successfully connected</returns>
-        public bool Start()
+        public async Task<bool> Start()
         {
             // Start a WStream client
             var wstr = new WStream();
             // Connect the wstream client
-            var wsconn = wstr.Connect(_config.Server, CancellationToken.None);
+            var wsconn = await wstr.Connect(_config.Server);
             // Check if the security handshake is successful
             if (SecurityHandshake(wsconn))
             {
@@ -41,7 +42,7 @@ namespace horizon.Client
                 }
                 else if (_config.ProxyConfig is HorizonProxyConfig proxcfg)
                 {
-                    var cd = new Conduit(wsconn, "default");
+                    var cd = new Conduit(wsconn);
                     var ipt = new HorizonInput(new IPEndPoint(IPAddress.Any, 500), cd);
                 }
             }

@@ -1,6 +1,7 @@
 ﻿using System;
 using System.Collections.Generic;
 using System.Text;
+using System.Threading.Tasks;
 using horizon.Transport;
 
 namespace horizon.Packets
@@ -17,10 +18,9 @@ namespace horizon.Packets
             PacketId = id;
             Value = value;
         }
-        public void SendPacket(BinaryAdapter adapter)
+        public async ValueTask SendPacket(BinaryAdapter adapter)
         {
-            if(Value.HasValue) adapter.WriteInt(Value.Value);
-            adapter.Flush();
+            if(Value.HasValue) await adapter.WriteInt(Value.Value, false);
         }
     }
 }

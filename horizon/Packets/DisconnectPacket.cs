@@ -1,6 +1,7 @@
 ﻿using System;
 using System.Collections.Generic;
 using System.Text;
+using System.Threading.Tasks;
 using horizon.Transport;
 
 namespace horizon.Packets
@@ -9,9 +10,9 @@ namespace horizon.Packets
     {
         public PacketType PacketId => PacketType.DisconnectPacket;
         public DisconnectReason Reason;
-        public void SendPacket(BinaryAdapter adapter)
+        public ValueTask SendPacket(BinaryAdapter adapter)
         {
-            adapter.WriteInt((int)Reason);
+            return adapter.WriteInt((int)Reason, false);
         }
     }
 }

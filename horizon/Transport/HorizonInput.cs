@@ -1,10 +1,14 @@
 ﻿using System;
+using System.Buffers;
 using System.Collections.Generic;
 using System.Net;
 using System.Net.Sockets;
 using System.Text;
 using System.Threading;
+using System.Threading.Tasks;
 using horizon.Transport;
+using horizon.Utilities;
+using Nito.AsyncEx.Synchronous;
 
 namespace horizon.Transport
 {
@@ -17,26 +21,28 @@ namespace horizon.Transport
         private Conduit _hConduit;
         // Input
         private Socket _hSocket;
-        public HorizonInput(IPEndPoint localEp, Conduit link)
+        private int _minBufferSize;
+        public HorizonInput(IPEndPoint localEp, Conduit link, int minBuffer = 1 << 18)
         {
+            _minBufferSize = minBuffer;
             _hConduit = link;
             _hSocket = new Socket(SocketType.Stream, ProtocolType.Tcp);
             _hSocket.Bind(localEp);
             // Create the listener on a separate thread
-            new Thread(Listen).Start();
+            Task.Run(Listen);
         }
         /// <summary>
         /// Listener Function
         /// </summary>
-        private void Listen()
+        private async Task Listen()
         {
-            _hSocket.Listen(100);
+            _hSocket.Listen(10);
             while (_hConduit.Connected)
             {
                 // Listen for clients and add a client fiber when a client connects
-                var sock = _hSocket.Accept();
-                var fiber = new Fiber(new NetworkStream(sock));
-                _hConduit.AddFiber(fiber);
+                var sock = await _hSocket.AcceptAsync();
+                var fiber = new Fiber(sock, _hConduit.Adapter._arrayPool.Rent(_minBufferSize), _hConduit);
+                await _hConduit.AddFiber(fiber);
             }
             _hSocket.Dispose();
         }

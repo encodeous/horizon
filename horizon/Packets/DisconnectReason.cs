@@ -11,10 +11,6 @@ namespace horizon.Packets
         /// </summary>
         Timeout,
         /// <summary>
-        /// Failed Connecting to Endpoint
-        /// </summary>
-        EndpointError,
-        /// <summary>
         /// Graceful shutdown
         /// </summary>
         Shutdown,

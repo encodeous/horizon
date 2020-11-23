@@ -1,5 +1,6 @@
 ﻿using System;
 using System.Buffers;
+using System.Collections.Concurrent;
 using System.Collections.Generic;
 using System.IO;
 using System.Reflection.Metadata;
@@ -7,7 +8,8 @@ using System.Text;
 using System.Threading;
 using System.Threading.Tasks;
 using horizon.Packets;
-using horizon.Protocol;
+using horizon.Utilities;
+using Nito.AsyncEx.Synchronous;
 using wstreamlib;
 
 namespace horizon.Transport
@@ -17,24 +19,20 @@ namespace horizon.Transport
     /// </summary>
     public class Conduit
     {
-        private readonly BinaryAdapter _adapter;
+        private readonly SemaphoreSlim _mtx = new SemaphoreSlim(1, 1);
+        private ConcurrentQueue<int> _disconnectQueue = new ConcurrentQueue<int>();
+        private ConcurrentQueue<int> _connectQueue = new ConcurrentQueue<int>();
+
+        internal readonly BinaryAdapter Adapter;
         /// <summary>
         /// Checks if the Tunnel is still connected
         /// </summary>
         public bool Connected { get; private set; }
         /// <summary>
-        /// Checks if the Tunnel is using Encryption
-        /// </summary>
-        public bool Encrypted { get; }
-        /// <summary>
         /// Last heartbeat packet received
         /// </summary>
         private DateTime _lastHeartBeat = DateTime.Now;
-        /// <summary>
-        /// Encryption Signature, used for debugging
-        /// </summary>
-        public byte[] Signature { get; }
-        private readonly Fiber[] _fibers;
+        private readonly ConcurrentDictionary<int, Fiber> _fibers;
         private readonly WsConnection _wsConn;
 
         public delegate void DisconnectDelegate(DisconnectReason reason);
@@ -49,55 +47,51 @@ namespace horizon.Transport
         /// </summary>
         public CreateFiberCallback FiberCreate;
 
-        public Conduit(WsConnection rawWs, string token, bool useEncryption = false, int timeoutMilliseconds = 30000, int maxFibers = 1000)
+        public Conduit(WsConnection rawWs, int timeoutMilliseconds = 30000)
         {
             _wsConn = rawWs;
-            _fibers = new Fiber[maxFibers];
-            Encrypted = useEncryption;
+            _fibers = new ConcurrentDictionary<int, Fiber>();
             // Wrap the binary stream for easier read/write
-            var transformer = new HorizonTransformers(rawWs);
-            _adapter = new BinaryAdapter(transformer);
-
-            if (useEncryption)
-            {
-                // Establish an Encrypted Connection
-                var enc = new EncryptionTransformer(token);
-                // Broadcast Encryption Packet
-                SendPacket(new PublicKeyBroadcast(){PublicKey = enc.GetPublicKey()});
-                int id = _adapter.ReadInt();
-                if (id != (int) PacketType.PublicKeyBroadcast)
-                {
-                    // Unexpected packet received
-                    throw new IOException("Expected Public Key Broadcast!");
-                }
-                // Create the shared private AES key
-                enc.CompleteEncryptionHandshake(_adapter.ReadByteArray());
-                // Set the Signature
-                Signature = enc.Signature;
-                // Modify the transformer to allow seamless encryption
-                transformer.AddTransformer(enc);
-            }
-
+            Adapter = new BinaryAdapter(rawWs);
             Connected = true;
             // Start Routing, Local Socket Checking and Heartbeat functions
-            new Thread(Router).Start();
-            new Thread(FiberChecker).Start();
-            Task.Run(async () =>
-            {
-                while (Connected)
-                {
-                    if (DateTime.Now - _lastHeartBeat > TimeSpan.FromMilliseconds(timeoutMilliseconds))
-                    {
-                        Disconnect(DisconnectReason.Timeout);
-                        break;
-                    }
-                    SendPacket(new SignalPacket(PacketType.Heartbeat));
-                    await Task.Delay(timeoutMilliseconds / 2);
-                }
-            });
+            Task.Run(Router);
+            Task.Run(FiberThread);
+            Task.Run(()=>Heartbeat(timeoutMilliseconds));
             // Register websocket disconnection
             rawWs.ConnectionClosedEvent += RawWsOnConnectionClosedEvent;
         }
+
+        private async Task Heartbeat(int timeoutMilliseconds)
+        {
+            while (Connected)
+            {
+                if (DateTime.Now - _lastHeartBeat > TimeSpan.FromMilliseconds(timeoutMilliseconds))
+                {
+                    //await Disconnect(DisconnectReason.Timeout);
+                    break;
+                }
+                //await SendPacket(new SignalPacket(PacketType.Heartbeat));
+                await Task.Delay(timeoutMilliseconds / 2);
+            }
+        }
+
+        private async Task FiberThread()
+        {
+            while (Connected)
+            {
+                if (_disconnectQueue.TryDequeue(out var a))
+                {
+                    await SendPacket(new SignalPacket(PacketType.RemoveFiber, a));
+                }
+                if (_connectQueue.TryDequeue(out var b))
+                {
+                    await SendPacket(new SignalPacket(PacketType.AddFiber, b));
+                }
+                await Task.Delay(200);
+            }
+        }
+
         /// <summary>
         /// This function is called when the tunnel is abruptly closed
         /// </summary>
@@ -114,7 +108,7 @@ namespace horizon.Transport
                 OnDisconnect?.Invoke(reason);
                 try
                 {
-                    _wsConn.Dispose();
+                    _wsConn.Close();
                 }
                 catch
                 {
@@ -127,14 +121,14 @@ namespace horizon.Transport
         /// Disconnect from the remote, use <code>DisconnectReason.Terminated</code> to kill the connection
         /// </summary>
         /// <param name="reason"></param>
-        public void Disconnect(DisconnectReason reason = DisconnectReason.Shutdown)
+        public async Task Disconnect(DisconnectReason reason = DisconnectReason.Shutdown)
         {
             if (Connected)
             {
                 if (reason != DisconnectReason.Terminated)
                 {
                     // Send graceful shutdown message
-                    SendPacket(new DisconnectPacket()
+                    await SendPacket(new DisconnectPacket()
                     {
                         Reason = reason
                     });
@@ -152,7 +146,7 @@ namespace horizon.Transport
                         {
                             try
                             {
-                                await _wsConn.DisposeAsync();
+                                await _wsConn.Close();
                             }
                             catch
                             {
@@ -164,14 +158,14 @@ namespace horizon.Transport
                         {
                             OnDisconnect?.Invoke(reason);
                         }
-                    });
+                    }).Start();
                 }
                 else
                 {
                     // Kill connection
                     try
                     {
-                        _wsConn.Dispose();
+                        await _wsConn.Close();
                     }
                     catch
                     {
@@ -189,30 +183,44 @@ namespace horizon.Transport
         /// </summary>
         private void DisconnectFibers()
         {
-            for (var i = 0; i < _fibers.Length; i++)
+            for (var i = 0; i < _fibers.Count; i++)
             {
                 var f = _fibers[i];
-                if(f == null || !f.Connected) continue; // No fiber active at current index
                 try
                 {
                     f.Disconnect();
-                    _fibers[i] = null;
                 }
                 catch
                 {
                     // ignored
                 }
             }
+            _fibers.Clear();
+        }
+        public ConcurrentQueue<Func<Task>> DispatchQueue = new ConcurrentQueue<Func<Task>>();
+        private async Task DispatchThread()
+        {
+            while (Connected)
+            {
+                if (DispatchQueue.TryDequeue(out var x))
+                {
+
+                }
+                else
+                {
+                    
+                }
+            }
         }
         /// <summary>
         /// The main routing function that handles all packets and responses
         /// </summary>
-        private void Router()
+        private async Task Router()
         {
             while (Connected)
             {
                 // read packet type
-                PacketType packet = (PacketType)_adapter.ReadInt();
+                PacketType packet = (PacketType) await Adapter.ReadInt();
                 if (packet == PacketType.Heartbeat)
                 {
                     // update heartbeat time
@@ -220,162 +228,170 @@ namespace horizon.Transport
                 }
                 else if (packet == PacketType.AddFiber)
                 {
-                    var id = _adapter.ReadInt();
-                    // check if id is valid, and within the allowed range
-                    if (id < 0 || id > _fibers.Length) continue;
+                    var id = await Adapter.ReadInt();
                     var res = FiberCreate?.Invoke();
                     // make sure a malicious server/client cannot create a fiber on an input node
                     if (res != null)
                     {
+                        res.Id = id;
                         // Override existing fibers
-                        if(_fibers[id] != null) _fibers[id].Disconnect(); // Disconnect the fiber if it already exists
+                        if(_fibers.ContainsKey(id)) await RemoveFiber(id, true);
                         _fibers[id] = res;
-                        res.Connected = true;
+                        res.StartAcceptingData();
                         // Signal that the fiber is active
-                        SendPacket(new SignalPacket(PacketType.FiberAdded, id));
+                        await SendPacket(new SignalPacket(PacketType.FiberAdded, id));
                     }
                     else
                     {
                         // Invalid fiber packet, or rejected
-                        SendPacket(new SignalPacket(PacketType.FiberNotAdded, id));
+                        await SendPacket(new SignalPacket(PacketType.FiberNotAdded, id));
                     }
                 }
                 else if (packet == PacketType.RemoveFiber)
                 {
-                    var id = _adapter.ReadInt();
-                    if (id < 0 || id > _fibers.Length)
+                    var id = await Adapter.ReadInt();
+                    if (_fibers.ContainsKey(id))
                     {
-                        _fibers[id].Disconnect();
-                        _fibers[id] = null;
+                        await RemoveFiber(id, true);
                     }
                 }
                 else if (packet == PacketType.FiberNotAdded)
                 {
-                    var id = _adapter.ReadInt();
-                    if (id < 0 || id > _fibers.Length)
+                    var id = await Adapter.ReadInt();
+                    if (_fibers.ContainsKey(id))
                     {
-                        _fibers[id].Disconnect();
-                        _fibers[id] = null;
+                        await RemoveFiber(id, true);
                     }
                 }
                 else if(packet == PacketType.FiberAdded)
                 {
-                    var id = _adapter.ReadInt();
-                    if (id < 0 || id > _fibers.Length)
+                    var id = await Adapter.ReadInt();
+                    if (_fibers.ContainsKey(id))
                     {
-                        _fibers[id].Connected = true;
+                        _fibers[id].StartAcceptingData();
                     }
                 }
                 else if (packet == PacketType.DataPacket)
                 {
-                    // prevent mixed up packets
-                    lock (_adapter._readLock)
+                    await Adapter._readSlim.WaitAsync();
+                    var fiberId = await Adapter.ReadInt(false);
+                    var val = await Adapter.ReadByteArrayFast(false);
+                    try
                     {
-                        // do not wrap data packet in object for better performance
-                        var fiberId = _adapter.ReadInt();
-                        if (_fibers[fiberId] != null)
+                        // check if the fiber is connected, if it's not just discard the packet as it might have been buffered slightly
+                        if (_fibers.ContainsKey(fiberId) && _fibers[fiberId].Connected)
                         {
-                            var val = _adapter.ReadByteArrayFast();
-                            // check if the fiber is connected, if it's not just discard the packet as it might have been buffered slightly
-                            if(_fibers[fiberId].Connected) _fibers[fiberId].Remote.Write(val.arr, 0, val.len);
-                            _adapter.ReturnByte(val.arr);
+                            if (!_fibers[fiberId].Send(val))
+                            {
+                                await RemoveFiber(fiberId);
+                            }
                         }
                         else
                         {
-                            // a fatal error has occurred, and there is a fiber mismatch between the client and server
-                            Disconnect(DisconnectReason.Terminated);
-                        }
-                    }
-                }
-                else if (packet == PacketType.DisconnectPacket)
-                {
-                    var reason = (DisconnectReason) _adapter.ReadInt();
-                    // Handle disconnection
-                    RemoteDisconnect(reason);
-                }
-            }
-        }
-        /// <summary>
-        /// Checks the local fibers for data
-        /// </summary>
-        private void FiberChecker()
-        {
-            ArrayPool<byte> arrayPool = ArrayPool<byte>.Create();
-            while (Connected)
-            {
-                for (var i = 0; i < _fibers.Length; i++)
-                {
-                    var f = _fibers[i];
-                    try
-                    {
-                        // do not wrap data packet in object for better performance
-                        if (f != null && f.Remote.DataAvailable && f.Connected)
-                        {
-                            // TODO: Add custom buffer size
-                            var arr = arrayPool.Rent(4096);
-                            var len = f.Remote.Read(arr);
-
-                            lock (_adapter._writeLock)
-                            {
-                                _adapter.WriteInt((int)PacketType.DataPacket);
-                                _adapter.WriteInt(i);
-                                _adapter.WriteByteArray(arr.AsSpan(len));
-                            }
+                            // stray packet
                         }
                     }
                     catch
                     {
-                        RemoveFiber(i);
+                        await RemoveFiber(fiberId);
                     }
+                    finally
+                    {
+                        Adapter.ReturnByte(val.Array);
+                        Adapter._readSlim.Release();
+                    }
+                }
+                else if (packet == PacketType.DisconnectPacket)
+                {
+                    var reason = (DisconnectReason) await Adapter.ReadInt();
+                    // Handle disconnection
+                    RemoteDisconnect(reason);
+                }
+                else
+                {
+                    throw new InvalidOperationException("invalid packet has been received!");
                 }
             }
         }
+
+        internal async Task ForwardData(int id, ArraySegment<byte> data)
+        {
+            try
+            {
+                await Adapter._writeSlim.WaitAsync();
+                await Adapter.WriteInt((int)PacketType.DataPacket, false);
+                await Adapter.WriteInt(id, false);
+                await Adapter.WriteByteArray(data, false);
+            }
+            finally
+            {
+                Adapter._writeSlim.Release();
+            }
+        }
+
+        private readonly SemaphoreSlim _disconnectionSlim = new SemaphoreSlim(1, 1);
+
         /// <summary>
         /// Disconnect and remove the fiber from the conduit
         /// </summary>
         /// <param name="id"></param>
-        public void RemoveFiber(int id)
+        /// <param name="remote"></param>
+        public async Task RemoveFiber(int id, bool remote = false)
         {
             try
             {
-                _fibers[id].Disconnect();
-                SendPacket(new SignalPacket(PacketType.RemoveFiber, id));
+                await _disconnectionSlim.WaitAsync();
+                if (_fibers.ContainsKey(id))
+                {
+                    if (_fibers[id].Connected)
+                    {
+                        _fibers[id].Disconnect();
+                        if(!remote) _disconnectQueue.Enqueue(id);
+                    }
+                    _fibers.Remove(id, out _);
+                }
             }
-            catch
+            finally
             {
-
+                _disconnectionSlim.Release();
             }
-            _fibers[id] = null;
         }
+        private readonly SemaphoreSlim _connectionSlim = new SemaphoreSlim(1);
+        private int _idCnt = 0;
         /// <summary>
         /// Initiate a new fiber in the conduit
         /// </summary>
         /// <param name="fiber"></param>
-        public void AddFiber(Fiber fiber)
+        public async Task AddFiber(Fiber fiber)
         {
-            while (true)
+            try
             {
-                for (int i = 0; i < _fibers.Length; i++)
-                {
-                    if (_fibers[i] == null)
-                    {
-                        _fibers[i] = fiber;
-                        SendPacket(new SignalPacket(PacketType.AddFiber, i));
-                        return;
-                    }
-                }
+                await _connectionSlim.WaitAsync();
+                _idCnt++;
+                fiber.Id = _idCnt;
+                _fibers[_idCnt] = fiber;
+                _connectQueue.Enqueue(_idCnt);
+            }
+            finally
+            {
+                _connectionSlim.Release();
             }
         }
         /// <summary>
         /// A generic method the send data to the remote party
         /// </summary>
         /// <param name="packet"></param>
-        private void SendPacket(IPacket packet)
+        private async Task SendPacket(IPacket packet)
         {
-            lock (_adapter)
+            try
             {
-                _adapter.WriteInt((int)packet.PacketId);
-                packet.SendPacket(_adapter);
+                await _mtx.WaitAsync();
+                await Adapter.WriteInt((int)packet.PacketId, false);
+                await packet.SendPacket(Adapter);
+            }
+            finally
+            {
+                _mtx.Release();
             }
         }
     }

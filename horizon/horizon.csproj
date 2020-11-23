@@ -6,13 +6,14 @@
   </PropertyGroup>
 
   <ItemGroup>
+    <PackageReference Include="Microsoft.AspNetCore.App" Version="2.2.8" />
+    <PackageReference Include="Nito.AsyncEx" Version="5.1.0" />
     <PackageReference Include="Sodium.Core" Version="1.2.3" />
-    <PackageReference Include="wstreamlib" Version="1.1.0" />
   </ItemGroup>
 
   <ItemGroup>
     <Reference Include="wstreamlib">
-      <HintPath>..\..\wstream\wstream\wstreamlib\bin\Release\netcoreapp3.1\wstreamlib.dll</HintPath>
+      <HintPath>..\..\wstream\wstreamlib\bin\Release\netcoreapp3.1\wstreamlib.dll</HintPath>
     </Reference>
   </ItemGroup>
 

@@ -5,7 +5,9 @@ using System.Collections.Generic;
 using System.IO;
 using System.Security.Cryptography;
 using System.Text;
-using horizon.Protocol;
+using System.Threading;
+using System.Threading.Tasks;
+using wstreamlib;
 
 namespace horizon.Transport
 {
@@ -14,54 +16,80 @@ namespace horizon.Transport
     /// </summary>
     public class BinaryAdapter
     {
-        private readonly HorizonTransformers _hTransform;
+        private WsConnection _connection;
 
-        private readonly ArrayPool<byte> _arrayPool;
+        internal readonly ArrayPool<byte> _arrayPool;
 
         // Synchronization
 
-        internal object _writeLock = new object();
+        internal SemaphoreSlim _readSlim = new SemaphoreSlim(1, 1);
+        internal SemaphoreSlim _writeSlim = new SemaphoreSlim(1, 1);
 
-        internal object _readLock = new object();
-
-        public BinaryAdapter(HorizonTransformers transform)
+        public BinaryAdapter(WsConnection connection)
         {
-            _hTransform = transform;
+            _connection = connection;
             _arrayPool = ArrayPool<byte>.Create();
         }
-        public BinaryAdapter(Stream stream)
-        {
-            _hTransform = new HorizonTransformers(stream);
-            _arrayPool = ArrayPool<byte>.Create();
-        }
+
         /// <summary>
         /// Fill buffer with bytes from the read stream
         /// </summary>
         /// <param name="buf"></param>
-        public void FillBytes(Span<byte> buf)
+        public async ValueTask FillBytes(ArraySegment<byte> buf, bool l = true)
         {
-            lock (_readLock)
+            if (!l)
             {
                 int offset = 0;
-                int remaining = buf.Length;
+                int remaining = buf.Count;
                 while (remaining > 0)
                 {
-                    int read = _hTransform.ReadStream.Read(buf.Slice(offset));
+                    int read = await _connection.Read(buf.Slice(offset));
+                    if (read <= 0)
+                        throw new EndOfStreamException("Unexpected End Of Stream in Binary Adapter");
+                    remaining -= read;
+                    offset += read;
+                }
+                return;
+            }
+            try
+            {
+                await _readSlim.WaitAsync();
+                int offset = 0;
+                int remaining = buf.Count;
+                while (remaining > 0)
+                {
+                    int read = await _connection.Read(buf.Slice(offset));
                     if (read <= 0)
                         throw new EndOfStreamException("Unexpected End Of Stream in Binary Adapter");
                     remaining -= read;
                     offset += read;
                 }
             }
+            finally
+            {
+                _readSlim.Release();
+            }
         }
+    
 
-        private byte[] IReadBytes(int bytes)
+        private async ValueTask<byte[]> IReadBytes(int bytes, bool l = true)
         {
-            lock (_readLock)
+            if (!l)
             {
                 var buf = _arrayPool.Rent(bytes);
-                FillBytes(buf.AsSpan(0, bytes));
+                await FillBytes(new ArraySegment<byte>(buf, 0, bytes), false);
                 return buf;
+            }
+            try
+            {
+                await _readSlim.WaitAsync();
+                var buf = _arrayPool.Rent(bytes);
+                await FillBytes(new ArraySegment<byte>(buf, 0, bytes), false);
+                return buf;
+            }
+            finally
+            {
+                _readSlim.Release();
             }
         }
         /// <summary>
@@ -69,51 +97,95 @@ namespace horizon.Transport
         /// </summary>
         /// <param name="bytes"></param>
         /// <returns></returns>
-        public byte[] ReadBytes(int bytes)
+        public async ValueTask<byte[]> ReadBytes(int bytes, bool l = true)
         {
-            lock (_readLock)
+            if (!l)
             {
                 var buf = new byte[bytes];
-                FillBytes(buf);
+                await FillBytes(new ArraySegment<byte>(buf), false);
                 return buf;
+            }
+            try
+            {
+                await _readSlim.WaitAsync();
+                var buf = new byte[bytes];
+                await FillBytes(new ArraySegment<byte>(buf), false);
+                return buf;
+            }
+            finally
+            {
+                _readSlim.Release();
             }
         }
         /// <summary>
         /// Read the next 4 bytes as an integer
         /// </summary>
         /// <returns></returns>
-        public int ReadInt()
+        public async ValueTask<int> ReadInt(bool l = true)
         {
-            lock (_readLock)
+            if (!l)
             {
-                var val = IReadBytes(4);
+                var val = await IReadBytes(4, false);
                 int k = BitConverter.ToInt32(val);
                 _arrayPool.Return(val);
                 return k;
+            }
+
+            try
+            {
+                await _readSlim.WaitAsync();
+                var val = await IReadBytes(4, false);
+                int k = BitConverter.ToInt32(val);
+                _arrayPool.Return(val);
+                return k;
+            }
+            finally
+            {
+                _readSlim.Release();
             }
         }
         /// <summary>
         /// Read a byte array by first reading the length (4 bytes) then read the actual array
         /// </summary>
         /// <returns></returns>
-        public byte[] ReadByteArray()
+        public async ValueTask<byte[]> ReadByteArray(bool l = true)
         {
-            lock (_readLock)
+            if (!l)
             {
-                int len = ReadInt();
-                return ReadBytes(len);
+                int len = await ReadInt(false);
+                return await ReadBytes(len, false);
+            }
+            try
+            {
+                await _readSlim.WaitAsync();
+                int len = await ReadInt(false);
+                return await ReadBytes(len, false);
+            }
+            finally
+            {
+                _readSlim.Release();
             }
         }
         /// <summary>
         /// Read a byte array by first reading the length (4 bytes) then read the actual array, the returned array might be larger than the actual array.
         /// </summary>
         /// <returns></returns>
-        public (byte[] arr, int len) ReadByteArrayFast()
+        public async ValueTask<ArraySegment<byte>> ReadByteArrayFast(bool l = true)
         {
-            lock (_readLock)
+            if (!l)
             {
-                int len = ReadInt();
-                return (IReadBytes(len), len);
+                int len = await ReadInt(false);
+                return new ArraySegment<byte>(await IReadBytes(len, false), 0, len);
+            }
+            try
+            {
+                await _readSlim.WaitAsync();
+                int len = await ReadInt(false);
+                return new ArraySegment<byte>(await IReadBytes(len, false), 0, len);
+            }
+            finally
+            {
+                _readSlim.Release();
             }
         }
         /// <summary>
@@ -128,32 +200,56 @@ namespace horizon.Transport
         /// Read the next 8 bytes as a long
         /// </summary>
         /// <returns></returns>
-        public long ReadLong()
+        public async ValueTask<long> ReadLong(bool l = true)
         {
-            lock (_readLock)
+            if (!l)
             {
-                var val = IReadBytes(8);
+                var val = await IReadBytes(8, false);
                 long k = BitConverter.ToInt64(val);
                 _arrayPool.Return(val);
                 return k;
+            }
+            try
+            {
+                await _readSlim.WaitAsync();
+                var val = await IReadBytes(8, false);
+                long k = BitConverter.ToInt64(val);
+                _arrayPool.Return(val);
+                return k;
+            }
+            finally
+            {
+                _readSlim.Release();
             }
         }
         /// <summary>
         /// Write binary data directly to the stream
         /// </summary>
         /// <param name="buf"></param>
-        public void WriteBytes(Span<byte> buf)
+        public async ValueTask WriteBytes(ArraySegment<byte> buf, bool l = true)
         {
-            lock (_writeLock)
-                _hTransform.WriteStream.Write(buf);
+            if (!l)
+            {
+                await _connection.Write(buf);
+                return;
+            }
+            try
+            {
+                await _writeSlim.WaitAsync();
+                await _connection.Write(buf);
+            }
+            finally
+            {
+                _writeSlim.Release();
+            }
         }
         /// <summary>
         /// Write a int to the stream
         /// </summary>
         /// <param name="val"></param>
-        public void WriteInt(int val)
+        public async ValueTask WriteInt(int val, bool l = true)
         {
-            lock (_writeLock)
+            if (!l)
             {
                 var buf = _arrayPool.Rent(4);
                 if (BitConverter.IsLittleEndian)
@@ -165,29 +261,61 @@ namespace horizon.Transport
                     BinaryPrimitives.WriteInt32BigEndian(buf, val);
                 }
 
-                _hTransform.WriteStream.Write(buf, 0, 4);
+                await _connection.Write(new ArraySegment<byte>(buf, 0, 4));
                 _arrayPool.Return(buf);
+                return;
+            }
+            try
+            {
+                await _writeSlim.WaitAsync();
+                var buf = _arrayPool.Rent(4);
+                if (BitConverter.IsLittleEndian)
+                {
+                    BinaryPrimitives.WriteInt32LittleEndian(buf, val);
+                }
+                else
+                {
+                    BinaryPrimitives.WriteInt32BigEndian(buf, val);
+                }
+
+                await _connection.Write(new ArraySegment<byte>(buf, 0, 4));
+                _arrayPool.Return(buf);
+            }
+            finally
+            {
+                _writeSlim.Release();
             }
         }
         /// <summary>
         /// Write the length of the buffer and then write the buffer
         /// </summary>
         /// <param name="buf"></param>
-        public void WriteByteArray(Span<byte> buf)
+        public async ValueTask WriteByteArray(ArraySegment<byte> buf, bool l = true)
         {
-            lock (_writeLock)
+            if (!l)
             {
-                WriteInt(buf.Length);
-                WriteBytes(buf);
+                await WriteInt(buf.Count, false);
+                await WriteBytes(buf, false);
+                return;
+            }
+            try
+            {
+                await _writeSlim.WaitAsync();
+                await WriteInt(buf.Count, false);
+                await WriteBytes(buf, false);
+            }
+            finally
+            {
+                _writeSlim.Release();
             }
         }
         /// <summary>
         /// Write a long to the stream
         /// </summary>
         /// <param name="val"></param>
-        public void WriteLong(long val)
+        public async ValueTask WriteLong(long val, bool l = true)
         {
-            lock (_writeLock)
+            if (!l)
             {
                 var buf = _arrayPool.Rent(8);
                 if (BitConverter.IsLittleEndian)
@@ -198,24 +326,36 @@ namespace horizon.Transport
                 {
                     BinaryPrimitives.WriteInt64BigEndian(buf, val);
                 }
-                _hTransform.WriteStream.Write(buf, 0, 8);
+                await _connection.Write(new ArraySegment<byte>(buf, 0, 8));
+                _arrayPool.Return(buf);
+                return;
+            }
+            try
+            {
+                await _writeSlim.WaitAsync();
+                var buf = _arrayPool.Rent(8);
+                if (BitConverter.IsLittleEndian)
+                {
+                    BinaryPrimitives.WriteInt64LittleEndian(buf, val);
+                }
+                else
+                {
+                    BinaryPrimitives.WriteInt64BigEndian(buf, val);
+                }
+                await _connection.Write(new ArraySegment<byte>(buf, 0, 8));
                 _arrayPool.Return(buf);
             }
-        }
-        /// <summary>
-        /// Flush the stream and any underlying streams
-        /// </summary>
-        public void Flush()
-        {
-            _hTransform.WriteStream.Flush();
+            finally
+            {
+                _writeSlim.Release();
+            }
         }
         /// <summary>
         /// Close the stream and any underlying streams
         /// </summary>
         public void Close()
         {
-            _hTransform.WriteStream.Close();
-            _hTransform.ReadStream.Close();
+            _connection.Close();
         }
     }
 }

@@ -8,9 +8,10 @@ using System.Security.Cryptography;
 using System.Threading;
 using horizon;
 using horizon.Client;
-using horizon.Protocol;
 using horizon.Server;
 using horizon.Transport;
+using Nito.AsyncEx;
+using Nito.AsyncEx.Synchronous;
 
 namespace horizontester
 {
@@ -22,15 +23,16 @@ namespace horizontester
             {
                 AllowReverseProxy = true,
                 AllowTunnel = true,
-                Bind = new IPEndPoint(IPAddress.Any, 2001)
+                Bind = new IPEndPoint(IPAddress.Any, 22001)
             });
             server.Start();
             var client = new HorizonClient(new HorizonClientConfig()
             {
-                ProxyConfig = new HorizonProxyConfig(){Port = 1234, Remote = "google.com"},
-                Server = new Uri("ws://localhost:2001")
+                ProxyConfig = new HorizonProxyConfig(){Port = 80, Remote = "localhost"},
+                Server = new Uri("ws://localhost:22001")
             });
-            client.Start();
+            var x = client.Start().WaitAndUnwrapException();
+            Thread.Sleep(-1);
         }
     }
 }

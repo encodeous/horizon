@@ -1,6 +1,7 @@
 ﻿using System;
 using System.Collections.Generic;
 using System.Text;
+using System.Threading.Tasks;
 using horizon.Transport;
 
 namespace horizon.Packets
@@ -8,6 +9,6 @@ namespace horizon.Packets
     interface IPacket
     {
         PacketType PacketId { get; }
-        void SendPacket(BinaryAdapter adapter);
+        ValueTask SendPacket(BinaryAdapter adapter);
     }
 }
