@@ -11,12 +11,12 @@ namespace horizon.Client
     public class HorizonReverseProxyConfig : IHorizonTunnelConfig
     {
         /// <summary>
-        /// Where the proxy server should listen to
+        /// Where the reverse proxy server should listen to
         /// </summary>
-        public IPEndPoint ReverseEndPoint;
+        public int ListenPort { get; set; }
         /// <summary>
-        /// Where the proxy server should connect to
+        /// Where the reverse proxy server should connect to
         /// </summary>
-        public IPEndPoint LocalEndPoint;
+        public IPEndPoint LocalEndPoint { get; set; }
     }
 }

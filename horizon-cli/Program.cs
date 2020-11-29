@@ -5,74 +5,69 @@ using System.Linq;
 using System.Net;
 using System.Reflection;
 using System.Security.Cryptography.X509Certificates;
+using System.Text.Json;
+using System.Text.RegularExpressions;
 using System.Threading;
 using CommandLine;
 using CommandLine.Text;
 using horizon;
-using horizon.Legacy;
+using horizon.Client;
+using horizon.Server;
+using Microsoft.Extensions.Logging;
 
 namespace horizon_cli
 {
     class Program
     {
-        public class Options
+        [Verb("server", HelpText = "Start Horizon as a server")]
+        class ServerOptions
         {
-            [Option('a', "about", Required = false, HelpText = "About Horizon")]
-            public bool About { get; set; }
+            [Value(0, Default = -1, MetaName = "<server-port>", HelpText = "Horizon server bind port.", Required = false)]
+            public int Port { get; set; }
+            [Option('c', "config", Default = "", Required = false, HelpText = "Specify a horizon configuration path, defaults to current directory.")]
+            public string ConfigPath { get; set; }
+        }
+        [Verb("client", HelpText = "Start Horizon as a client and connect to the specified Horizon server.")]
+        class ClientOptions
+        {
+            [Value(0, MetaName = "<server-url>", HelpText = "Horizon server url.", Required = true)]
+            public string ServerUrl { get; set; }
 
-            [Option('s', "server", Required = false, HelpText = "[Server] Start Horizon as a server")]
-            public bool Server { get; set; }
-
-            [Option('q', "authfile", Required = false, HelpText = "[Server] Specify a custom path to an auth file")]
-            public string AuthFile { get; set; }
-
-            [Option('p', "port", Required = false, HelpText = "[Server] Specify a port to listen to")]
-            public int Port { get; set; } = -1;
-
-            [Option('c', "client", Required = false,
-                HelpText =
-                    "[Client] Start Horizon as a client and connect to the specified Horizon server --client <uri>")]
-            public string Client { get; set; }
-
-            [Option('m', "portmap", Required = false,
-                HelpText =
-                    "[Client] Maps local ports to remote addresses. <port>:<remote_server>:<port> Example: 22:ssh.example.com:22")]
+            [Value(1, MetaName = "<port-map>", HelpText = "Specifies a port mapping. <port>:<remote_server>:<port>:[R/P] Example: 22:ssh.example.com:22:P (proxies connections made to localhost:22 towards ssh.example.com:22), or 80::80:R (reverse proxies connections to the server on port 80 over to localhost:80)", Required = true)]
             public string PortMap { get; set; }
 
-            [Option('u', "user", Required = false, HelpText = "[Client] Authentication username")]
-            public string Username { get; set; }
-
-            [Option('t', "token", Required = false, HelpText = "[Client] Authentication token (secret)")]
+            [Value(2, MetaName = "<client-token>", Default = "default", HelpText = "Client authentication token. (Strongly recommended!)", Required = false)]
             public string Token { get; set; }
-
-            [Option('b', "buffer", Required = false, HelpText = "[Client/Server] I/O buffer size")]
-            public int BufferSize { get; set; }
-
-            [Option('g', "config", Required = false, HelpText = "[Util] Generate an auth file through a wizard")]
-            public bool AuthGen { get; set; }
         }
 
-        static HorizonServer server;
-        static HorizonClient client;
+        [Verb("about", HelpText = "About Horizon")]
+        class About
+        {
+            
+        }
 
+        private static HorizonServer Server;
+        private static HorizonClient Client;
+        private static bool Stopped = false;
 
         static void Main(string[] args)
         {
 #if DEBUG
-            Logger.Level = Logger.LoggingLevel.Debug;
+            Logger.ApplicationLogLevel = LogLevel.Trace;
 #endif
+            Logger.ApplicationLogLevel = LogLevel.Information;
             Console.WriteLine(
                 " |-------------------------------------------------------------------------------------| \n" +
-                " |                    Horizon | High Performance WebSocket Tunnels                     | \n" +
-                " |                     [To view help, execute Horizon with --help]                     | \n" +
+                " |                        Horizon | High Performance TCP Proxy                         | \n" +
+                " |                  [Start Horizon in either Client or Server mode]                    | \n" +
                 " |             View the project at (https://github.com/encodeous/horizon)              | \n" +
                 " |-------------------------------------------------------------------------------------| \n");
 
             Console.CancelKeyPress += ConsoleOnCancelKeyPress;
 
-            Parser.Default.ParseArguments<Options>(args).WithParsed((o) =>
+            Parser.Default.ParseArguments<ClientOptions, ServerOptions, About>(args).WithParsed((o) =>
             {
-                if (o.About)
+                if (o is About)
                 {
                     Console.WriteLine(
                         " |-------------------------------------------------------------------------------------| \n" +
@@ -88,145 +83,134 @@ namespace horizon_cli
                         " | ~~~~~       ~   ~    ~~   ~        ~      ~      ~~   ~ ~~~    ~    ~      ~   ~ ~  | \n" +
                         " | ~~                                                                               ~~ | \n" +
                         " |~~  Horizon is powered by encodeous/wstream (https://github.com/encodeous/wstream)  ~| \n" +
-                        " | and ninjasource/Ninja.Websockets (https://github.com/ninjasource/Ninja.WebSockets). | \n" +
+                        " |     ~~~    and dotnet/aspnetcore (https://github.com/dotnet/aspnetcore).       ~~~  | \n" +
                         " |~~                                                                           ~~     ~| \n" +
                         " |~ ~  ~     horizon-cli uses the wonderful Command Line Parser Library at  ~~   ~    ~| \n" +
                         " | ~      ~    ~  (https://github.com/commandlineparser/commandline)   ~~~~  ~~ ~  ~~  | \n" +
-                        " |    ~     ~    ~    and uses Newtonsoft.Json for configuration.    ~      ~~     ~~  | \n" +
+                        " |    ~ and is inspired by jpillora/chisel (https://github.com/jpillora/chisel)    ~   | \n" +
                         " |  ~    ~~~     ~~~                                              ~      ~~~     ~     | \n" +
-                        " |    ~   ~           Created with care by Encodeous / Adam Chen.       ~~~   ~    ~   | \n" +
+                        " |    ~   ~                Created by Encodeous / Adam Chen.            ~~~   ~    ~   | \n" +
                         " | ~      ~~~  View the project at (https://github.com/encodeous/horizon)   ~~~    ~   | \n" +
                         " |-------------------------------------------------------------------------------------| \n");
-                    return;
                 }
-
-                if (o.AuthGen)
+                else if (o is ServerOptions s)
                 {
-                    Console.WriteLine("Horizon Authentication Generation Wizard");
-                    new AuthGen().Generate();
-                }
-                else if (o.Server)
-                {
-                    Console.WriteLine("Running Horizon in server mode.");
-
-                    if (o.AuthFile == null)
+                    var cfg = new HorizonServerConfig();
+                    if (File.Exists(Path.Combine(s.ConfigPath, "hconfig.json")))
                     {
-                        if (!File.Exists("auth.json"))
+                        cfg = Storage.GetServerConfig(Path.Combine(s.ConfigPath, "hconfig.json"));
+                    }
+                    else
+                    {
+                        Storage.SaveServerConfig(Path.Combine(s.ConfigPath, "hconfig.json"), cfg);
+                    }
+
+                    if (s.Port != -1)
+                    {
+                        cfg.Bind = "0.0.0.0:" + s.Port;
+                    }
+
+                    foreach (var user in cfg.Users)
+                    {
+                        if (user.Token == "default" || user.Token == "default-whitelist")
                         {
-                            Console.WriteLine("No auth.json found! Generating default auth file...");
-                            PermissionHandler.SetPermissionInfo("auth.json",
-                                new List<UserPermission>(new[] {DefaultPermission()}));
+                            $"Default configuration detected, it is highly recommended to change the default authentication token!".Log(LogLevel.Critical);
+                            break;
                         }
-
-                        o.AuthFile = "auth.json";
                     }
 
-                    if (o.Port == -1)
+                    Server = new HorizonServer(cfg);
+                    Server.Start();
+                    $"Press Ctrl + C to exit".Log(LogLevel.Information);
+                    while (!Stopped)
                     {
-                        Console.WriteLine("Please specify a port with -p or --port.");
-                        return;
+                        Thread.Sleep(100);
                     }
+                }
+                else if (o is ClientOptions c)
+                {
+                    $"Press Ctrl + C to exit".Log(LogLevel.Information);
 
-                    var perms = PermissionHandler.GetPermissionInfo(o.AuthFile);
+                    var cfg = new HorizonClientConfig();
 
-                    server = new HorizonServer(perms);
-
-                    var ep = new IPEndPoint(IPAddress.Any, o.Port);
-                    if (o.BufferSize != 0)
+                    cfg.Token = c.Token;
+                    Uri hUri = null;
+                    if (Uri.TryCreate(c.ServerUrl, UriKind.Absolute, out var k))
                     {
-                        server.Listen(ep, new HorizonOptions() {DefaultBufferSize = o.BufferSize});
+                        if (k.Scheme != "wss" && k.Scheme != "ws")
+                        {
+                            if (Uri.TryCreate("ws://" + c.ServerUrl, UriKind.Absolute, out var j))
+                            {
+                                hUri = j;
+                            }
+                            else
+                            {
+                                $"The specified Server url was unable to be parsed! The url must have a scheme of either ws:// or wss://".Log(LogLevel.Critical);
+                                return;
+                            }
+
+                        }
+                        else
+                        {
+                            hUri = k;
+                        }
                     }
                     else
                     {
-                        server.Listen(ep,
-                            new HorizonOptions()
-                                {DefaultBufferSize = (int) HorizonOptions.OptimizedBuffer.ReducedLatency});
-                    }
-
-                    server.Start();
-                    Console.WriteLine($"Horizon started on port: {o.Port}");
-                    Thread.Sleep(-1);
-                }
-                else if (o.Client != null)
-                {
-                    var s = Extensions.GetScheme(o.Client);
-                    if (s != "http" && s != "https" && s != "ws" && s != "wss")
-                    {
-                        Console.WriteLine($"Unrecognized Url Scheme \"{s}\". Valid schemes are http(s) / ws(s)");
+                        $"The specified Server url was unable to be parsed! The url must have a scheme of either ws:// or wss://".Log(LogLevel.Critical);
                         return;
                     }
-
-                    if (o.PortMap == null)
+                    cfg.Server = hUri;
+                    
+                    Regex regex = new Regex("^(\\d+):(\\S+):(\\d+):([RPrp])$");
+                    var match = regex.Match(c.PortMap);
+                    if (match.Success)
                     {
-                        Console.WriteLine("Horizon Client requires a port map.");
-                        return;
-                    }
-
-                    if (o.Username == null || o.Token == null)
-                    {
-                        Console.WriteLine("Using default permissions");
-                        o.Username = "default-user";
-                        o.Token = "horizon";
-                    }
-
-                    var k = o.PortMap.Split(":");
-
-                    var localEp = new IPEndPoint(IPAddress.Any, int.Parse(k[0]));
-
-                    client = new HorizonClient(new Uri(o.Client), k[1], int.Parse(k[2]), o.Username, o.Token);
-
-                    var ping = client.Ping();
-
-                    if (ping.Success)
-                    {
-                        Console.WriteLine($"Pinged server, Latency: ({ping.Latency.TotalMilliseconds} ms).");
+                        if (match.Groups[4].Value.ToUpper() == "R")
+                        {
+                            var ccfg = new HorizonReverseProxyConfig();
+                            ccfg.ListenPort = int.Parse(match.Groups[3].Value);
+                            ccfg.LocalEndPoint = new IPEndPoint(IPAddress.Loopback, int.Parse(match.Groups[1].Value));
+                            cfg.ProxyConfig = ccfg;
+                        }
+                        else
+                        {
+                            var ccfg = new HorizonProxyConfig();
+                            ccfg.LocalPort = int.Parse(match.Groups[1].Value);
+                            var serverString = match.Groups[2].Value;
+                            ccfg.RemoteEndPoint = new DnsEndPoint(serverString, int.Parse(match.Groups[3].Value));
+                        }
                     }
                     else
                     {
-                        Console.WriteLine($"Could not ping server, double check the username/token or the server uri.");
+                        $"The specified portmap is not valid! A valid portmap follows this format: <local port>:<remote ip/domain, ignored for reverse proxy>:<remote port/bind port>:[R/P - reverse proxy or proxy]".Log(LogLevel.Critical);
                         return;
                     }
 
-                    client.OpenTunnel(localEp,
-                        o.BufferSize != 0
-                            ? new HorizonOptions {DefaultBufferSize = o.BufferSize}
-                            : new HorizonOptions());
-                    Console.WriteLine($"Horizon started | {o.Username}@ [{o.PortMap}] = > [{o.Client}].");
-                    Thread.Sleep(-1);
-                }
-                else
-                {
-                    Console.WriteLine(
-                        " -                          [Press Any Key to exit...]                                 - ");
-                    Console.ReadKey();
+                    Client = new HorizonClient(cfg);
+                    if (!Client.Start().Result)
+                    {
+                        $"The client failed to connect!".Log(LogLevel.Critical);
+                        return;
+                    }
+                    while (!Stopped)
+                    {
+                        Thread.Sleep(100);
+                    }
                 }
             });
         }
 
-        private static UserPermission DefaultPermission()
+        private static bool CheckEquals(HorizonServerConfig a, HorizonServerConfig b)
         {
-            return new UserPermission()
-            {
-                UserId = "default-user",
-                UserToken = "horizon",
-                AllowedRemoteServers = new[] {"127.0.0.1", "localhost", "0.0.0.0"}.ToList(),
-                AllowAnyPort = true
-            };
+            return JsonSerializer.Serialize(a) == JsonSerializer.Serialize(b);
         }
 
         private static void ConsoleOnCancelKeyPress(object sender, ConsoleCancelEventArgs e)
         {
-            if (server != null)
-            {
-                Console.WriteLine("Stopping Horizon Server...");
-                server.Close();
-            }
-
-            if (client != null)
-            {
-                Console.WriteLine("Stopping Horizon Client...");
-                client.CloseTunnel();
-            }
+            Client?.Stop().Wait();
+            Server?.Stop();
+            Stopped = true;
         }
     }
 }

@@ -9,6 +9,7 @@ using System.Threading;
 using System.Threading.Tasks;
 using horizon.Packets;
 using horizon.Utilities;
+using Microsoft.Extensions.Logging;
 using Nito.AsyncEx.Synchronous;
 using wstreamlib;
 
@@ -19,7 +20,6 @@ namespace horizon.Transport
     /// </summary>
     public class Conduit
     {
-        private readonly SemaphoreSlim _mtx = new SemaphoreSlim(1, 1);
         private ConcurrentQueue<int> _disconnectQueue = new ConcurrentQueue<int>();
         private ConcurrentQueue<int> _connectQueue = new ConcurrentQueue<int>();
 
@@ -33,7 +33,7 @@ namespace horizon.Transport
         /// </summary>
         private DateTime _lastHeartBeat = DateTime.Now;
         private readonly ConcurrentDictionary<int, Fiber> _fibers;
-        private readonly WsConnection _wsConn;
+        internal readonly WsConnection _wsConn;
 
         public delegate void DisconnectDelegate(DisconnectReason reason);
         /// <summary>
@@ -57,6 +57,7 @@ namespace horizon.Transport
             // Start Routing, Local Socket Checking and Heartbeat functions
             Task.Run(Router);
             Task.Run(FiberThread);
+            Task.Run(Dispatcher);
             Task.Run(()=>Heartbeat(timeoutMilliseconds));
             // Register websocket disconnection
             rawWs.ConnectionClosedEvent += RawWsOnConnectionClosedEvent;
@@ -82,13 +83,32 @@ namespace horizon.Transport
             {
                 if (_disconnectQueue.TryDequeue(out var a))
                 {
-                    await SendPacket(new SignalPacket(PacketType.RemoveFiber, a));
-                }
-                if (_connectQueue.TryDequeue(out var b))
+                    if (_fibers.ContainsKey(a))
+                    {
+                        await RemoveFiber(a, true);
+                    }
+                } else if (_connectQueue.TryDequeue(out var id))
                 {
-                    await SendPacket(new SignalPacket(PacketType.AddFiber, b));
+                    var res = FiberCreate?.Invoke();
+                    // make sure a malicious server/client cannot create a fiber on an input node
+                    if (res != null)
+                    {
+                        res.Id = id;
+                        // Override existing fibers
+                        if (_fibers.ContainsKey(id)) await RemoveFiber(id, true);
+                        _fibers[id] = res;
+                        res.StartAcceptingData();
+                        // Signal that the fiber is active
+                        SendPacket(new SignalPacket(PacketType.FiberAdded, id));
+                    }
+                    else
+                    {
+                        $"An unexpected fiber was rejected from connecting!".Log(LogLevel.Warning);
+                        // Invalid fiber packet, or rejected
+                        SendPacket(new SignalPacket(PacketType.FiberNotAdded, id));
+                    }
                 }
-                await Task.Delay(200);
+                await Task.Delay(10);
             }
         }
 
@@ -105,17 +125,23 @@ namespace horizon.Transport
         {
             if (Connected)
             {
+                $"The remote party has disconnected conduit id {_wsConn.ConnectionId}, reason {reason}".Log(LogLevel.Trace);
+                Connected = false;
                 OnDisconnect?.Invoke(reason);
-                try
+                if (_wsConn.Connected)
                 {
-                    _wsConn.Close();
+                    try
+                    {
+                        _wsConn.Close();
+                    }
+                    catch(Exception e)
+                    {
+                        $"{e.Message} {e.StackTrace}".Log(LogLevel.Trace);
+                    }
                 }
-                catch
-                {
-                    // ignored
-                }
+                // Disconnect all local clients
+                DisconnectFibers();
             }
-            Connected = false;
         }
         /// <summary>
         /// Disconnect from the remote, use <code>DisconnectReason.Terminated</code> to kill the connection
@@ -125,10 +151,11 @@ namespace horizon.Transport
         {
             if (Connected)
             {
+                $"Disconnected conduit id {_wsConn.ConnectionId} from remote with reason {reason}".Log(LogLevel.Trace);
                 if (reason != DisconnectReason.Terminated)
                 {
                     // Send graceful shutdown message
-                    await SendPacket(new DisconnectPacket()
+                    SendPacket(new DisconnectPacket()
                     {
                         Reason = reason
                     });
@@ -148,9 +175,9 @@ namespace horizon.Transport
                             {
                                 await _wsConn.Close();
                             }
-                            catch
+                            catch(Exception e)
                             {
-                                // ignored
+                                $"{e.Message} {e.StackTrace}".Log(LogLevel.Trace);
                             }
                             OnDisconnect?.Invoke(DisconnectReason.Terminated);
                         }
@@ -162,14 +189,18 @@ namespace horizon.Transport
                 }
                 else
                 {
+                    Connected = false;
                     // Kill connection
-                    try
+                    if (_wsConn.Connected)
                     {
-                        await _wsConn.Close();
-                    }
-                    catch
-                    {
-                        // ignored
+                        try
+                        {
+                            await _wsConn.Close();
+                        }
+                        catch(Exception e)
+                        {
+                            $"{e.Message} {e.StackTrace}".Log(LogLevel.Trace);
+                        }
                     }
                     OnDisconnect?.Invoke(reason);
                 }
@@ -190,25 +221,34 @@ namespace horizon.Transport
                 {
                     f.Disconnect();
                 }
-                catch
+                catch(Exception e)
                 {
-                    // ignored
+                    $"{e.Message} {e.StackTrace}".Log(LogLevel.Trace);
                 }
             }
             _fibers.Clear();
         }
         public ConcurrentQueue<Func<Task>> DispatchQueue = new ConcurrentQueue<Func<Task>>();
-        private async Task DispatchThread()
+        private async Task Dispatcher()
         {
             while (Connected)
             {
                 if (DispatchQueue.TryDequeue(out var x))
                 {
-
+                    try
+                    {
+                        await Adapter._writeSlim.WaitAsync();
+                        await x.Invoke();
+                    }
+                    finally
+                    {
+                        Adapter._writeSlim.Release();
+                    }
                 }
-                else
+
+                if (DispatchQueue.IsEmpty)
                 {
-                    
+                    await Task.Delay(10);
                 }
             }
         }
@@ -229,31 +269,12 @@ namespace horizon.Transport
                 else if (packet == PacketType.AddFiber)
                 {
                     var id = await Adapter.ReadInt();
-                    var res = FiberCreate?.Invoke();
-                    // make sure a malicious server/client cannot create a fiber on an input node
-                    if (res != null)
-                    {
-                        res.Id = id;
-                        // Override existing fibers
-                        if(_fibers.ContainsKey(id)) await RemoveFiber(id, true);
-                        _fibers[id] = res;
-                        res.StartAcceptingData();
-                        // Signal that the fiber is active
-                        await SendPacket(new SignalPacket(PacketType.FiberAdded, id));
-                    }
-                    else
-                    {
-                        // Invalid fiber packet, or rejected
-                        await SendPacket(new SignalPacket(PacketType.FiberNotAdded, id));
-                    }
+                    _connectQueue.Enqueue(id);
                 }
                 else if (packet == PacketType.RemoveFiber)
                 {
                     var id = await Adapter.ReadInt();
-                    if (_fibers.ContainsKey(id))
-                    {
-                        await RemoveFiber(id, true);
-                    }
+                    _disconnectQueue.Enqueue(id);
                 }
                 else if (packet == PacketType.FiberNotAdded)
                 {
@@ -291,8 +312,9 @@ namespace horizon.Transport
                             // stray packet
                         }
                     }
-                    catch
+                    catch(Exception e)
                     {
+                        $"{e.Message} {e.StackTrace}".Log(LogLevel.Trace);
                         await RemoveFiber(fiberId);
                     }
                     finally
@@ -309,12 +331,12 @@ namespace horizon.Transport
                 }
                 else
                 {
-                    throw new InvalidOperationException("invalid packet has been received!");
+                    $"Client Conduit has been De-Synchronized".Log(LogLevel.Error);
                 }
             }
         }
 
-        internal async Task ForwardData(int id, ArraySegment<byte> data)
+        internal async ValueTask ForwardData(int id, ArraySegment<byte> data)
         {
             try
             {
@@ -346,7 +368,7 @@ namespace horizon.Transport
                     if (_fibers[id].Connected)
                     {
                         _fibers[id].Disconnect();
-                        if(!remote) _disconnectQueue.Enqueue(id);
+                        if(!remote) SendPacket(new SignalPacket(PacketType.RemoveFiber, id));
                     }
                     _fibers.Remove(id, out _);
                 }
@@ -370,7 +392,7 @@ namespace horizon.Transport
                 _idCnt++;
                 fiber.Id = _idCnt;
                 _fibers[_idCnt] = fiber;
-                _connectQueue.Enqueue(_idCnt);
+                SendPacket(new SignalPacket(PacketType.AddFiber, _idCnt));
             }
             finally
             {
@@ -381,18 +403,13 @@ namespace horizon.Transport
         /// A generic method the send data to the remote party
         /// </summary>
         /// <param name="packet"></param>
-        private async Task SendPacket(IPacket packet)
+        private void SendPacket(IPacket packet)
         {
-            try
+            DispatchQueue.Enqueue(async () =>
             {
-                await _mtx.WaitAsync();
                 await Adapter.WriteInt((int)packet.PacketId, false);
                 await packet.SendPacket(Adapter);
-            }
-            finally
-            {
-                _mtx.Release();
-            }
+            });
         }
     }
 }

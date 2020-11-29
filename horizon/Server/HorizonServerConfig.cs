@@ -10,20 +10,26 @@ namespace horizon.Server
         /// <summary>
         /// Users and Tokens list, initialized by default with user "default" and all permissions
         /// </summary>
-        public Dictionary<string, HorizonUser> Users = new Dictionary<string, HorizonUser>(new KeyValuePair<string, HorizonUser>[1]
-            {new KeyValuePair<string, HorizonUser>("default", new HorizonUser(){Whitelist = false})});
-        /// <summary>
-        /// Should the server allow Reverse Proxy Requests
-        /// </summary>
-        public bool AllowReverseProxy = false;
-        /// <summary>
-        /// Should the server allow Tunneling Requests
-        /// </summary>
-        public bool AllowTunnel = false;
+        public HorizonUser[] Users { get; set; } =
+        {
+            new HorizonUser()
+            {
+                Whitelist = false,
+                Token = "default"
+            },
+            new HorizonUser()
+            {
+                Whitelist = true,
+                Token = "default-whitelist",
+                RemotesPattern = new[]
+                    {new RemotePattern() {HostRegex = "[\\s\\S]", PortRangeStart = 0, PortRangeEnd = 65353}},
+                ReverseBinds = new[] {8080}
+            }
+        };
 
         /// <summary>
         /// Horizon's local Port and IP Address
         /// </summary>
-        public IPEndPoint Bind = new IPEndPoint(IPAddress.Any, 5050);
+        public string Bind { get; set; } = "0.0.0.0:5050";
     }
 }

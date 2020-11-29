@@ -6,6 +6,7 @@ using System.Net.Sockets;
 using System.Text;
 using System.Threading;
 using System.Threading.Tasks;
+using horizon.Packets;
 using horizon.Transport;
 using horizon.Utilities;
 using Nito.AsyncEx.Synchronous;
@@ -30,7 +31,15 @@ namespace horizon.Transport
             _hSocket.Bind(localEp);
             // Create the listener on a separate thread
             Task.Run(Listen);
+            _hConduit.OnDisconnect += HConduitOnOnDisconnect;
         }
+
+        private void HConduitOnOnDisconnect(DisconnectReason reason)
+        {
+            _hSocket.Shutdown(SocketShutdown.Both);
+            _hSocket.Dispose();
+        }
+
         /// <summary>
         /// Listener Function
         /// </summary>

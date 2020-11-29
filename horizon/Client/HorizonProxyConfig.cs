@@ -1,5 +1,6 @@
 ﻿using System;
 using System.Collections.Generic;
+using System.Net;
 using System.Text;
 
 namespace horizon.Client
@@ -10,12 +11,13 @@ namespace horizon.Client
     public class HorizonProxyConfig : IHorizonTunnelConfig
     {
         /// <summary>
+        /// Local Port to Listen to
+        /// </summary>
+        public int LocalPort { get; set; }
+
+        /// <summary>
         /// Where to connect to
         /// </summary>
-        public string Remote;
-        /// <summary>
-        /// Remote port
-        /// </summary>
-        public int Port;
+        public EndPoint RemoteEndPoint { get; set; }
     }
 }

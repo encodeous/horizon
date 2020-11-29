@@ -12,14 +12,14 @@ namespace horizon.Client
         /// <summary>
         /// Client token
         /// </summary>
-        public string Token;
+        public string Token { get; set; }
         /// <summary>
-        /// Server address
+        /// Horizon Server address
         /// </summary>
-        public Uri Server;
+        public Uri Server { get; set; }
         /// <summary>
         /// Proxy configuration, either use <see cref="HorizonProxyConfig"/> or <see cref="HorizonReverseProxyConfig"/>
         /// </summary>
-        public IHorizonTunnelConfig ProxyConfig;
+        public IHorizonTunnelConfig ProxyConfig { get; set; }
     }
 }

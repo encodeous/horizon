@@ -1,5 +1,6 @@
 ﻿using System;
 using System.Collections.Generic;
+using System.ComponentModel;
 using System.IO;
 using System.IO.Compression;
 using System.Net;
@@ -19,19 +20,32 @@ namespace horizontester
     {
         static void Main(string[] args)
         {
-            var server = new HorizonServer(new HorizonServerConfig()
+            Console.WriteLine("Server?");
+            char c = Console.ReadKey().KeyChar;
+            if (c == 'y')
             {
-                AllowReverseProxy = true,
-                AllowTunnel = true,
-                Bind = new IPEndPoint(IPAddress.Any, 22001)
-            });
-            server.Start();
-            var client = new HorizonClient(new HorizonClientConfig()
+                var server = new HorizonServer(new HorizonServerConfig()
+                {
+                    Bind = new IPEndPoint(IPAddress.Any, 22001)
+                });
+                server.Start();
+            }
+            else
             {
-                ProxyConfig = new HorizonProxyConfig(){Port = 80, Remote = "localhost"},
-                Server = new Uri("ws://localhost:22001")
-            });
-            var x = client.Start().WaitAndUnwrapException();
+                var client = new HorizonClient(new HorizonClientConfig()
+                {
+                    Token = "default",
+                    ProxyConfig = new HorizonReverseProxyConfig()
+                    {
+                        ListenPort = 1234, 
+                        LocalEndPoint = new IPEndPoint(IPAddress.Loopback, 13824)
+                    },
+                    Server = new Uri("ws://192.168.1.8:22001")
+                });
+                var x = client.Start().WaitAndUnwrapException();
+                Console.ReadLine();
+                client.Stop().WaitAndUnwrapException();
+            }
             Thread.Sleep(-1);
         }
     }

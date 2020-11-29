@@ -5,6 +5,7 @@ using System.IO;
 using System.Net.Sockets;
 using System.Text;
 using System.Threading.Tasks;
+using Microsoft.Extensions.Logging;
 using Nito.AsyncEx.Synchronous;
 
 namespace horizon.Transport
@@ -40,6 +41,7 @@ namespace horizon.Transport
 
         public void StartAcceptingData()
         {
+            $"Fiber {Id} in connection id {_hConduit._wsConn.ConnectionId} has started accepting data".Log(LogLevel.Trace);
             Connected = true;
             Remote.BeginReceive(_buffer, 0, _bufferSize, SocketFlags.None, ReadCallback, Remote);
         }
@@ -51,21 +53,22 @@ namespace horizon.Transport
                 var sock = (Socket) ar.AsyncState;
                 if (sock == null || !sock.Connected)
                 {
-                    //_hConduit.RemoveFiber(Id).WaitAndUnwrapException();
+                    _hConduit.RemoveFiber(Id).WaitAndUnwrapException();
                     return;
                 }
                 int bytesRead = sock.EndReceive(ar);
                 if (!sock.Connected || bytesRead == 0)
                 {
-                    //_hConduit.RemoveFiber(Id).WaitAndUnwrapException();
+                    _hConduit.RemoveFiber(Id).WaitAndUnwrapException();
                     return;
                 }
-                _hConduit.ForwardData(Id, new ArraySegment<byte>(_buffer, 0, bytesRead)).WaitAndUnwrapException();
+                _hConduit.ForwardData(Id, new ArraySegment<byte>(_buffer, 0, bytesRead)).GetAwaiter().GetResult();
                 sock.BeginReceive(_buffer, 0, _bufferSize, SocketFlags.None, ReadCallback, sock);
             }
-            catch
+            catch(Exception e)
             {
-                //_hConduit.RemoveFiber(Id).WaitAndUnwrapException();
+                $"{e.Message} {e.StackTrace}".Log(LogLevel.Trace);
+                _hConduit.RemoveFiber(Id).WaitAndUnwrapException();
             }
         }
         public bool Send(ArraySegment<byte> data)
@@ -80,9 +83,10 @@ namespace horizon.Transport
                     sent += len;
                 }
             }
-            catch
+            catch(Exception e)
             {
-                //_hConduit.RemoveFiber(Id).WaitAndUnwrapException();
+                $"{e.Message} {e.StackTrace}".Log(LogLevel.Trace);
+                _hConduit.RemoveFiber(Id).WaitAndUnwrapException();
                 return false;
             }
 
@@ -98,11 +102,12 @@ namespace horizon.Transport
             {
                 try
                 {
+                    $"Fiber {Id} in connection id {_hConduit._wsConn.ConnectionId} has disconnected from the remote".Log(LogLevel.Trace);
                     Remote.Close();
                 }
-                catch
+                catch(Exception e)
                 {
-
+                    $"{e.Message} {e.StackTrace}".Log(LogLevel.Trace);
                 }
             }
             _hConduit.Adapter._arrayPool.Return(_buffer);
