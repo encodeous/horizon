@@ -26,7 +26,7 @@ namespace horizontester
             {
                 var server = new HorizonServer(new HorizonServerConfig()
                 {
-                    Bind = new IPEndPoint(IPAddress.Any, 22001)
+                    Bind = "0.0.0.0:22001"
                 });
                 server.Start();
             }

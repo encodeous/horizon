@@ -8,8 +8,6 @@ using System.Threading;
 using System.Threading.Tasks;
 using horizon.Packets;
 using horizon.Transport;
-using horizon.Utilities;
-using Nito.AsyncEx.Synchronous;
 
 namespace horizon.Transport
 {

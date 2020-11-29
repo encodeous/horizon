@@ -26,6 +26,10 @@ namespace horizon_cli
             public int Port { get; set; }
             [Option('c', "config", Default = "", Required = false, HelpText = "Specify a horizon configuration path, defaults to current directory.")]
             public string ConfigPath { get; set; }
+            [Option('s', "cert", Default = null, Required = false, HelpText = "Specify a SSL certificate path for securing connections.")]
+            public string CertPath { get; set; }
+            [Option('p', "cert-pass", Default = null, Required = false, HelpText = "SSL Certificate password (if applicable).")]
+            public string CertPass { get; set; }
         }
         [Verb("client", HelpText = "Start Horizon as a client and connect to the specified Horizon server.")]
         class ClientOptions
@@ -119,7 +123,14 @@ namespace horizon_cli
                         }
                     }
 
-                    Server = new HorizonServer(cfg);
+                    X509Certificate2 cert = null;
+                    if (s.CertPath != null)
+                    {
+                        cert = s.CertPass != null ?
+                            X509Certificate2.CreateFromEncryptedPemFile(s.CertPath, s.CertPass) :
+                            X509Certificate2.CreateFromPemFile(s.CertPath);
+                    }
+                    Server = new HorizonServer(cfg, cert);
                     Server.Start();
                     $"Press Ctrl + C to exit".Log(LogLevel.Information);
                     while (!Stopped)

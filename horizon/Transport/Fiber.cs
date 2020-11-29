@@ -6,7 +6,6 @@ using System.Net.Sockets;
 using System.Text;
 using System.Threading.Tasks;
 using Microsoft.Extensions.Logging;
-using Nito.AsyncEx.Synchronous;
 
 namespace horizon.Transport
 {
@@ -53,13 +52,13 @@ namespace horizon.Transport
                 var sock = (Socket) ar.AsyncState;
                 if (sock == null || !sock.Connected)
                 {
-                    _hConduit.RemoveFiber(Id).WaitAndUnwrapException();
+                    _hConduit.RemoveFiber(Id).GetAwaiter().GetResult();
                     return;
                 }
                 int bytesRead = sock.EndReceive(ar);
                 if (!sock.Connected || bytesRead == 0)
                 {
-                    _hConduit.RemoveFiber(Id).WaitAndUnwrapException();
+                    _hConduit.RemoveFiber(Id).GetAwaiter().GetResult();
                     return;
                 }
                 _hConduit.ForwardData(Id, new ArraySegment<byte>(_buffer, 0, bytesRead)).GetAwaiter().GetResult();
@@ -68,7 +67,7 @@ namespace horizon.Transport
             catch(Exception e)
             {
                 $"{e.Message} {e.StackTrace}".Log(LogLevel.Trace);
-                _hConduit.RemoveFiber(Id).WaitAndUnwrapException();
+                _hConduit.RemoveFiber(Id).GetAwaiter().GetResult();
             }
         }
         public bool Send(ArraySegment<byte> data)
@@ -86,7 +85,7 @@ namespace horizon.Transport
             catch(Exception e)
             {
                 $"{e.Message} {e.StackTrace}".Log(LogLevel.Trace);
-                _hConduit.RemoveFiber(Id).WaitAndUnwrapException();
+                _hConduit.RemoveFiber(Id).GetAwaiter().GetResult();
                 return false;
             }
 

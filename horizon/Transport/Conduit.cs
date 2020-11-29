@@ -8,9 +8,7 @@ using System.Text;
 using System.Threading;
 using System.Threading.Tasks;
 using horizon.Packets;
-using horizon.Utilities;
 using Microsoft.Extensions.Logging;
-using Nito.AsyncEx.Synchronous;
 using wstreamlib;
 
 namespace horizon.Transport
