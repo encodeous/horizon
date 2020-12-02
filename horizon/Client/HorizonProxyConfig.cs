@@ -18,6 +18,10 @@ namespace horizon.Client
         /// <summary>
         /// Where to connect to
         /// </summary>
-        public EndPoint RemoteEndPoint { get; set; }
+        public string RemoteEndpoint { get; set; }
+        /// <summary>
+        /// Which port to connect to
+        /// </summary>
+        public int RemoteEndpointPort { get; set; }
     }
 }

@@ -2,7 +2,7 @@
   "profiles": {
     "horizon-cli": {
       "commandName": "Project",
-      "commandLineArgs": "client localhost:8080 500:localhost:5000:P"
+      "commandLineArgs": "client dc.encodeous.ca:5050 221:0.0.0.0:22:P"
     }
   }
 }

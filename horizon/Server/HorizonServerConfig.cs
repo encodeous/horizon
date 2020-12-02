@@ -5,6 +5,9 @@ using System.Text;
 
 namespace horizon.Server
 {
+    /// <summary>
+    /// Server configuration
+    /// </summary>
     public class HorizonServerConfig
     {
         /// <summary>
@@ -28,7 +31,7 @@ namespace horizon.Server
         };
 
         /// <summary>
-        /// Horizon's local Port and IP Address
+        /// Horizon's local Port and IP Address. Use the format <code>ipaddress:port</code>
         /// </summary>
         public string Bind { get; set; } = "0.0.0.0:5050";
     }

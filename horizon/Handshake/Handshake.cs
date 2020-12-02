@@ -8,6 +8,12 @@ namespace horizon.Handshake
 {
     class Handshake
     {
+        /// <summary>
+        /// Computes a Hash based on a sequence of random bytes and the token, then hashed with SHA512
+        /// </summary>
+        /// <param name="input"></param>
+        /// <param name="token"></param>
+        /// <returns></returns>
         internal static byte[] GetHCombined(byte[] input, string token)
         {
             byte[] hashed = SHA512.Create().ComputeHash(Encoding.Unicode.GetBytes(token));
@@ -18,6 +24,11 @@ namespace horizon.Handshake
 
             return SHA512.Create().ComputeHash(hashed);
         }
+        /// <summary>
+        /// Get a sequence of cryptographically secure random bytes
+        /// </summary>
+        /// <param name="bytes"></param>
+        /// <returns></returns>
         internal static byte[] GetRandBytes(int bytes)
         {
             byte[] bin = new byte[bytes];

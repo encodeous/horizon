@@ -4,6 +4,9 @@ using System.Text;
 
 namespace horizon.Server
 {
+    /// <summary>
+    /// Stores pattern matching information about the remote
+    /// </summary>
     public struct RemotePattern
     {
         /// <summary>

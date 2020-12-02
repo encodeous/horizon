@@ -5,7 +5,10 @@ using System.Text;
 
 namespace horizon.Server
 {
-    public class HorizonUser : IEqualityComparer<HorizonUser>
+    /// <summary>
+    /// Stores information about a user that is allowed/disallowed to connect
+    /// </summary>
+    public class HorizonUser
     {
         /// <summary>
         /// Client authentication token
@@ -23,19 +26,5 @@ namespace horizon.Server
         /// A set of ports that a client is allowed/denied from binding to as their reverse proxy.
         /// </summary>
         public int[] ReverseBinds { get; set; } = Array.Empty<int>();
-
-        public bool Equals(HorizonUser x, HorizonUser y)
-        {
-            if (ReferenceEquals(x, y)) return true;
-            if (ReferenceEquals(x, null)) return false;
-            if (ReferenceEquals(y, null)) return false;
-            if (x.GetType() != y.GetType()) return false;
-            return x.Token == y.Token && x.Whitelist == y.Whitelist && x.RemotesPattern.SequenceEqual(y.RemotesPattern) && x.ReverseBinds.SequenceEqual(y.ReverseBinds);
-        }
-
-        public int GetHashCode(HorizonUser obj)
-        {
-            return HashCode.Combine(obj.Token, obj.Whitelist, obj.RemotesPattern, obj.ReverseBinds);
-        }
     }
 }

@@ -33,7 +33,7 @@ namespace horizon.Transport
         private readonly ConcurrentDictionary<int, Fiber> _fibers;
         internal readonly WsConnection _wsConn;
 
-        public delegate void DisconnectDelegate(DisconnectReason reason);
+        public delegate void DisconnectDelegate(DisconnectReason reason, Guid clientId, bool remote);
         /// <summary>
         /// Called on Disconnection of the Tunnel
         /// </summary>
@@ -45,7 +45,7 @@ namespace horizon.Transport
         /// </summary>
         public CreateFiberCallback FiberCreate;
 
-        public Conduit(WsConnection rawWs, int timeoutMilliseconds = 30000)
+        public Conduit(WsConnection rawWs, int timeoutMilliseconds = 5000)
         {
             _wsConn = rawWs;
             _fibers = new ConcurrentDictionary<int, Fiber>();
@@ -60,21 +60,28 @@ namespace horizon.Transport
             // Register websocket disconnection
             rawWs.ConnectionClosedEvent += RawWsOnConnectionClosedEvent;
         }
-
+        /// <summary>
+        /// Heartbeat function, checks every <seealso cref="timeoutMilliseconds"/> milliseconds.
+        /// </summary>
+        /// <param name="timeoutMilliseconds"></param>
+        /// <returns></returns>
         private async Task Heartbeat(int timeoutMilliseconds)
         {
             while (Connected)
             {
                 if (DateTime.Now - _lastHeartBeat > TimeSpan.FromMilliseconds(timeoutMilliseconds))
                 {
-                    //await Disconnect(DisconnectReason.Timeout);
+                    await Disconnect(DisconnectReason.Timeout);
                     break;
                 }
-                //await SendPacket(new SignalPacket(PacketType.Heartbeat));
+                SendPacket(new SignalPacket(PacketType.Heartbeat));
                 await Task.Delay(timeoutMilliseconds / 2);
             }
         }
-
+        /// <summary>
+        /// Checks if the remote requested to connect or delete a fiber
+        /// </summary>
+        /// <returns></returns>
         private async Task FiberThread()
         {
             while (Connected)
@@ -123,9 +130,8 @@ namespace horizon.Transport
         {
             if (Connected)
             {
-                $"The remote party has disconnected conduit id {_wsConn.ConnectionId}, reason {reason}".Log(LogLevel.Trace);
                 Connected = false;
-                OnDisconnect?.Invoke(reason);
+                OnDisconnect?.Invoke(reason, _wsConn.ConnectionId, true);
                 if (_wsConn.Connected)
                 {
                     try
@@ -137,8 +143,7 @@ namespace horizon.Transport
                         $"{e.Message} {e.StackTrace}".Log(LogLevel.Trace);
                     }
                 }
-                // Disconnect all local clients
-                DisconnectFibers();
+
             }
         }
         /// <summary>
@@ -149,7 +154,6 @@ namespace horizon.Transport
         {
             if (Connected)
             {
-                $"Disconnected conduit id {_wsConn.ConnectionId} from remote with reason {reason}".Log(LogLevel.Trace);
                 if (reason != DisconnectReason.Terminated)
                 {
                     // Send graceful shutdown message
@@ -177,11 +181,12 @@ namespace horizon.Transport
                             {
                                 $"{e.Message} {e.StackTrace}".Log(LogLevel.Trace);
                             }
-                            OnDisconnect?.Invoke(DisconnectReason.Terminated);
+                            Connected = false;
+                            OnDisconnect?.Invoke(DisconnectReason.Terminated, _wsConn.ConnectionId, false);
                         }
                         else
                         {
-                            OnDisconnect?.Invoke(reason);
+                            OnDisconnect?.Invoke(reason, _wsConn.ConnectionId, false);
                         }
                     }).Start();
                 }
@@ -200,33 +205,16 @@ namespace horizon.Transport
                             $"{e.Message} {e.StackTrace}".Log(LogLevel.Trace);
                         }
                     }
-                    OnDisconnect?.Invoke(reason);
+                    OnDisconnect?.Invoke(reason, _wsConn.ConnectionId, false);
                 }
-                // Disconnect all local clients
-                DisconnectFibers();
             }
             Connected = false;
         }
-        /// <summary>
-        /// Call to close and dispose all local Fibers and Sockets
-        /// </summary>
-        private void DisconnectFibers()
-        {
-            for (var i = 0; i < _fibers.Count; i++)
-            {
-                var f = _fibers[i];
-                try
-                {
-                    f.Disconnect();
-                }
-                catch(Exception e)
-                {
-                    $"{e.Message} {e.StackTrace}".Log(LogLevel.Trace);
-                }
-            }
-            _fibers.Clear();
-        }
         public ConcurrentQueue<Func<Task>> DispatchQueue = new ConcurrentQueue<Func<Task>>();
+        /// <summary>
+        /// Dispatches packets on a single thread to prevent a race event
+        /// </summary>
+        /// <returns></returns>
         private async Task Dispatcher()
         {
             while (Connected)

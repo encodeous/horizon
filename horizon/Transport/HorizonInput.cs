@@ -21,20 +21,28 @@ namespace horizon.Transport
         // Input
         private Socket _hSocket;
         private int _minBufferSize;
+        /// <summary>
+        /// Create a input node, when called it will bind to the specified <see cref="IPEndPoint"/> and fibers will be created when there is a request to that socket
+        /// </summary>
+        /// <param name="localEp"></param>
+        /// <param name="link"></param>
+        /// <param name="minBuffer"></param>
         public HorizonInput(IPEndPoint localEp, Conduit link, int minBuffer = 1 << 18)
         {
             _minBufferSize = minBuffer;
             _hConduit = link;
             _hSocket = new Socket(SocketType.Stream, ProtocolType.Tcp);
+            LingerOption lo = new LingerOption(false, 1);
+            _hSocket.SetSocketOption(SocketOptionLevel.Socket, SocketOptionName.Linger, lo);
             _hSocket.Bind(localEp);
             // Create the listener on a separate thread
             Task.Run(Listen);
             _hConduit.OnDisconnect += HConduitOnOnDisconnect;
         }
 
-        private void HConduitOnOnDisconnect(DisconnectReason reason)
+        private void HConduitOnOnDisconnect(DisconnectReason reason, Guid connectionId, bool remote)
         {
-            _hSocket.Shutdown(SocketShutdown.Both);
+            _hSocket.Close();
             _hSocket.Dispose();
         }
 

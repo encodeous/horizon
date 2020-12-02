@@ -12,6 +12,7 @@ using CommandLine;
 using CommandLine.Text;
 using horizon;
 using horizon.Client;
+using horizon.Packets;
 using horizon.Server;
 using Microsoft.Extensions.Logging;
 
@@ -30,6 +31,8 @@ namespace horizon_cli
             public string CertPath { get; set; }
             [Option('p', "cert-pass", Default = null, Required = false, HelpText = "SSL Certificate password (if applicable).")]
             public string CertPass { get; set; }
+            [Option('l', "log", Default = LogLevel.Information, Required = false, HelpText = "Log Output Level, [Trace, Debug, Information, Warning, Error, Critical, None]")]
+            public LogLevel LogLevel { get; set; }
         }
         [Verb("client", HelpText = "Start Horizon as a client and connect to the specified Horizon server.")]
         class ClientOptions
@@ -42,6 +45,8 @@ namespace horizon_cli
 
             [Value(2, MetaName = "<client-token>", Default = "default", HelpText = "Client authentication token. (Strongly recommended!)", Required = false)]
             public string Token { get; set; }
+            [Option('l', "log", Default = LogLevel.Information, Required = false, HelpText = "Log Output Level, [Trace, Debug, Information, Warning, Error, Critical, None]")]
+            public LogLevel LogLevel { get; set; }
         }
 
         [Verb("about", HelpText = "About Horizon")]
@@ -56,10 +61,6 @@ namespace horizon_cli
 
         static void Main(string[] args)
         {
-#if DEBUG
-            Logger.ApplicationLogLevel = LogLevel.Trace;
-#endif
-            Logger.ApplicationLogLevel = LogLevel.Information;
             Console.WriteLine(
                 " |-------------------------------------------------------------------------------------| \n" +
                 " |                        Horizon | High Performance TCP Proxy                         | \n" +
@@ -69,7 +70,7 @@ namespace horizon_cli
 
             Console.CancelKeyPress += ConsoleOnCancelKeyPress;
 
-            Parser.Default.ParseArguments<ClientOptions, ServerOptions, About>(args).WithParsed((o) =>
+            Parser.Default.ParseArguments<LogLevel, ClientOptions, ServerOptions, About>(args).WithParsed((o) =>
             {
                 if (o is About)
                 {
@@ -99,6 +100,7 @@ namespace horizon_cli
                 }
                 else if (o is ServerOptions s)
                 {
+                    Logger.ApplicationLogLevel = s.LogLevel;
                     var cfg = new HorizonServerConfig();
                     if (File.Exists(Path.Combine(s.ConfigPath, "hconfig.json")))
                     {
@@ -140,6 +142,7 @@ namespace horizon_cli
                 }
                 else if (o is ClientOptions c)
                 {
+                    Logger.ApplicationLogLevel = c.LogLevel;
                     $"Press Ctrl + C to exit".Log(LogLevel.Information);
 
                     var cfg = new HorizonClientConfig();
@@ -173,7 +176,7 @@ namespace horizon_cli
                     }
                     cfg.Server = hUri;
                     
-                    Regex regex = new Regex("^(\\d+):(\\S+):(\\d+):([RPrp])$");
+                    Regex regex = new Regex("^(\\d+):(\\S*):(\\d+):([RPrp])$");
                     var match = regex.Match(c.PortMap);
                     if (match.Success)
                     {
@@ -188,8 +191,9 @@ namespace horizon_cli
                         {
                             var ccfg = new HorizonProxyConfig();
                             ccfg.LocalPort = int.Parse(match.Groups[1].Value);
-                            var serverString = match.Groups[2].Value;
-                            ccfg.RemoteEndPoint = new DnsEndPoint(serverString, int.Parse(match.Groups[3].Value));
+                            ccfg.RemoteEndpoint = match.Groups[2].Value;
+                            ccfg.RemoteEndpointPort = int.Parse(match.Groups[3].Value);
+                            cfg.ProxyConfig = ccfg;
                         }
                     }
                     else
@@ -204,6 +208,7 @@ namespace horizon_cli
                         $"The client failed to connect!".Log(LogLevel.Critical);
                         return;
                     }
+                    Client.OnClientDisconnect += ClientOnClientDisconnect;
                     while (!Stopped)
                     {
                         Thread.Sleep(100);
@@ -212,9 +217,9 @@ namespace horizon_cli
             });
         }
 
-        private static bool CheckEquals(HorizonServerConfig a, HorizonServerConfig b)
+        private static void ClientOnClientDisconnect(DisconnectReason reason, Guid clientid, bool remote)
         {
-            return JsonSerializer.Serialize(a) == JsonSerializer.Serialize(b);
+            Stopped = true;
         }
 
         private static void ConsoleOnCancelKeyPress(object sender, ConsoleCancelEventArgs e)

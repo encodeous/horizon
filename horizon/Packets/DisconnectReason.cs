@@ -4,6 +4,9 @@ using System.Text;
 
 namespace horizon.Packets
 {
+    /// <summary>
+    /// Reason why a conduit was disconnected
+    /// </summary>
     public enum DisconnectReason
     {
         /// <summary>

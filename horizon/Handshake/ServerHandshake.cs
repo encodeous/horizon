@@ -16,26 +16,36 @@ using Microsoft.Extensions.Logging;
 
 namespace horizon.Handshake
 {
+    /// <summary>
+    /// An internal class to handle the entire connection process
+    /// </summary>
     internal static class ServerHandshake
     {
+        /// <summary>
+        /// Determines if a client is allowed to connect to the server
+        /// </summary>
+        /// <param name="adp"></param>
+        /// <param name="cfg"></param>
+        /// <returns>returns what the client requested, or null if the client should not be allowed</returns>
         internal static async ValueTask<ClientConnectRequest> SecurityHandshake(BinaryAdapter adp, HorizonServerConfig cfg)
         {
             try
             {
+                // Send server salt bytes
                 var sentBytes = Handshake.GetRandBytes(64);
                 await adp.WriteByteArray(sentBytes);
-
+                // Get the salt bytes from the client
                 var remoteBytes = await adp.ReadByteArray();
-
+                // Get the request from the client
                 var clientRequest =
                     (ClientConnectRequest) JsonSerializer.Deserialize(await adp.ReadByteArray(),
                         typeof(ClientConnectRequest));
 
                 Debug.Assert(clientRequest != null, nameof(clientRequest) + " != null");
+                // Find the user token of the client by brute force
                 var user = LookupUser(sentBytes, clientRequest.HashedBytes, cfg);
-                
                 var response = new ServerConnectionResponse();
-
+                // Check if the user was successfully found
                 if (user == null)
                 {
                     response.Accepted = false;
@@ -45,6 +55,7 @@ namespace horizon.Handshake
                 }
                 else
                 {
+                    // Verify if the client is authorized to connect
                     if (VerifyRequest(clientRequest, user))
                     {
                         response.Accepted = true;
@@ -59,14 +70,15 @@ namespace horizon.Handshake
                         return null;
                     }
                 }
-                if (clientRequest.ProxyEndpoint is not IPEndPoint 
-                    && clientRequest.ProxyEndpoint is not DnsEndPoint && clientRequest.CType == ClientConnectRequest.ConnectType.Proxy)
+                // Validate the endpoint
+                if ((string.IsNullOrEmpty(clientRequest.ProxyAddress) || clientRequest.ProxyPort < 0 || clientRequest.ProxyPort > 65535) && clientRequest.CType == ClientConnectRequest.ConnectType.Proxy)
                 {
                     response.Accepted = false;
-                    response.DisconnectMessage = "The specified endpoint type is not valid, valid types are IPEndPoint and DnsEndPoint.";
+                    response.DisconnectMessage = "The specified endpoint is not valid";
                     await adp.WriteByteArray(JsonSerializer.SerializeToUtf8Bytes(response));
                     return null;
                 }
+                // Check if the port is available if the client requested a reverse proxy
                 if (clientRequest.CType == ClientConnectRequest.ConnectType.ReverseProxy &&
                     !CheckAvailableServerPort(clientRequest.ListenPort))
                 {
@@ -76,7 +88,9 @@ namespace horizon.Handshake
                     await adp.WriteByteArray(JsonSerializer.SerializeToUtf8Bytes(response));
                     return null;
                 }
+                // Send the server response
                 await adp.WriteByteArray(JsonSerializer.SerializeToUtf8Bytes(response));
+                // Check if the client wants to connect
                 if (await adp.ReadInt() == 1)
                 {
                     return clientRequest;
@@ -90,7 +104,11 @@ namespace horizon.Handshake
 
             return null;
         }
-
+        /// <summary>
+        /// Checks if a port is already being used by another program, or connection
+        /// </summary>
+        /// <param name="port"></param>
+        /// <returns></returns>
         private static bool CheckAvailableServerPort(int port) {
             bool isAvailable = true;
 
@@ -111,7 +129,12 @@ namespace horizon.Handshake
             
             return isAvailable;
         }
-
+        /// <summary>
+        /// Check if the client's request is allowed by the server configuration
+        /// </summary>
+        /// <param name="req"></param>
+        /// <param name="user"></param>
+        /// <returns></returns>
         private static bool VerifyRequest(ClientConnectRequest req, HorizonUser user)
         {
             if (req.CType == ClientConnectRequest.ConnectType.Proxy)
@@ -119,23 +142,10 @@ namespace horizon.Handshake
                 bool matched = false;
                 foreach (var pattern in user.RemotesPattern)
                 {
-                    if (req.ProxyEndpoint is DnsEndPoint a)
-                    {
-                        if (!Regex.IsMatch(a.Host, pattern.HostRegex) || pattern.PortRangeStart > a.Port ||
-                            a.Port > pattern.PortRangeEnd) continue;
-                        matched = true;
-                        break;
-                    }
-
-                    if(req.ProxyEndpoint is IPEndPoint b)
-                    {
-                        if (!Regex.IsMatch(b.Address.ToString(), pattern.HostRegex) || pattern.PortRangeStart > b.Port ||
-                            b.Port > pattern.PortRangeEnd) continue;
-                        matched = true;
-                        break;
-                    }
-
-                    return false;
+                    if (!Regex.IsMatch(req.ProxyAddress, pattern.HostRegex) || pattern.PortRangeStart > req.ProxyPort ||
+                        req.ProxyPort > pattern.PortRangeEnd) continue;
+                    matched = true;
+                    break;
                 }
                 if (user.Whitelist)
                 {
@@ -161,7 +171,13 @@ namespace horizon.Handshake
 
             return false;
         }
-
+        /// <summary>
+        /// Find the user by looking through all the users and checking the hash one by one, this prevents either side from stealing the client authentication token since it is actually not sent
+        /// </summary>
+        /// <param name="salt"></param>
+        /// <param name="hash"></param>
+        /// <param name="cfg"></param>
+        /// <returns></returns>
         private static HorizonUser LookupUser(byte[] salt, byte[] hash, HorizonServerConfig cfg)
         {
             foreach (var k in cfg.Users)

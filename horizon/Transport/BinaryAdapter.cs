@@ -12,7 +12,7 @@ using wstreamlib;
 namespace horizon.Transport
 {
     /// <summary>
-    /// A class that can read from a transformed binary stream
+    /// A class that can read from a binary stream
     /// </summary>
     public class BinaryAdapter
     {

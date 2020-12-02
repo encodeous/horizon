@@ -8,12 +8,16 @@ using System.Threading;
 using System.Threading.Tasks;
 using horizon.Client;
 using horizon.Handshake;
+using horizon.Packets;
 using horizon.Transport;
 using Microsoft.Extensions.Logging;
 using wstreamlib;
 
 namespace horizon.Server
 {
+    /// <summary>
+    /// Horizon Server Instance
+    /// </summary>
     public class HorizonServer
     {
         private HorizonServerConfig _config;
@@ -23,8 +27,8 @@ namespace horizon.Server
         /// <summary>
         /// Configure the server
         /// </summary>
-        /// <param name="config"></param>
-        /// <param name="certificate"></param>
+        /// <param name="config">Specify a Horizon Configuration</param>
+        /// <param name="certificate">Pass in a SSL Certificate</param>
         public HorizonServer(HorizonServerConfig config, X509Certificate2 certificate = null)
         {
             _config = config;
@@ -32,6 +36,9 @@ namespace horizon.Server
             _certificate = certificate;
         }
 
+        /// <summary>
+        /// Start and bind the server to the port specified in the config. This will start listening to connections
+        /// </summary>
         public void Start()
         {
             var ep = IPEndPoint.Parse(_config.Bind);
@@ -46,7 +53,9 @@ namespace horizon.Server
                 $"Server Started and is bound to ws://{_config.Bind}".Log(LogLevel.Information);
             }
         }
-
+        /// <summary>
+        /// Shut down the Server, and disconnect all the clients
+        /// </summary>
         public void Stop()
         {
             $"Shutting Down Server...".Log(LogLevel.Information);
@@ -55,8 +64,11 @@ namespace horizon.Server
 
         private void AcceptConnections(WsConnection connection)
         {
+            // Log
             $"Client connection received with id {connection.ConnectionId}".Log(LogLevel.Debug);
+            // Perform handshake
             var req = ServerHandshake.SecurityHandshake(new BinaryAdapter(connection), _config).Result;
+            // Check if the client should be allowed
             if (req == null)
             {
                 try
@@ -69,16 +81,49 @@ namespace horizon.Server
                 }
                 return;
             }
+            // Create a new conduit
             var cd = new Conduit(connection);
+            cd.OnDisconnect += ConduitOnDisconnect;
+            // Check the connection type
             if (req.CType == ClientConnectRequest.ConnectType.Proxy)
             {
-                $"Proxy Client Connected. Proxying to {req.ProxyEndpoint}".Log(LogLevel.Information);
-                new HorizonOutput(req.ProxyEndpoint, cd);
+                // Open a proxy output pipe
+                $"Proxy Client Connected. Proxying to {req.ProxyAddress}:{req.ProxyPort}".Log(LogLevel.Information);
+                new HorizonOutput(new IPEndPoint(Dns.GetHostAddresses(req.ProxyAddress)[0], req.ProxyPort), cd);
             }
             else if(req.CType == ClientConnectRequest.ConnectType.ReverseProxy)
             {
+                // Open a reverse proxy input pipe
                 $"Reverse Proxy Client Connected. Bound on {req.ListenPort}".Log(LogLevel.Information);
                 new HorizonInput(new IPEndPoint(IPAddress.Any, req.ListenPort), cd);
+            }
+            else
+            {
+                try
+                {
+                    connection.Close();
+                }
+                catch (Exception e)
+                {
+                    $"{e.Message} {e.StackTrace}".Log(LogLevel.Trace);
+                }
+            }
+        }
+        /// <summary>
+        /// Handles client disconnection logging
+        /// </summary>
+        /// <param name="reason"></param>
+        /// <param name="connectionId"></param>
+        /// <param name="remote"></param>
+        private void ConduitOnDisconnect(DisconnectReason reason, Guid connectionId, bool remote)
+        {
+            if (remote)
+            {
+                $"The remote party has disconnected conduit id {connectionId}, with reason: {reason}".Log(LogLevel.Trace);
+            }
+            else
+            {
+                $"Disconnected from conduit id {connectionId}, with reason: {reason}".Log(LogLevel.Trace);
             }
         }
     }

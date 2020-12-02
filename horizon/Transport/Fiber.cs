@@ -5,6 +5,7 @@ using System.IO;
 using System.Net.Sockets;
 using System.Text;
 using System.Threading.Tasks;
+using horizon.Packets;
 using Microsoft.Extensions.Logging;
 
 namespace horizon.Transport
@@ -28,7 +29,12 @@ namespace horizon.Transport
         private readonly byte[] _buffer;
 
         private readonly Conduit _hConduit;
-
+        /// <summary>
+        /// Create a fiber
+        /// </summary>
+        /// <param name="remote">The remote/local tcp connection opened</param>
+        /// <param name="buffer">The read/write buffer</param>
+        /// <param name="conduit">Where the data should be mirrored to</param>
         public Fiber(Socket remote, byte[] buffer, Conduit conduit)
         {
             _buffer = buffer;
@@ -36,8 +42,16 @@ namespace horizon.Transport
             Connected = false;
             Remote = remote;
             _hConduit = conduit;
+            _hConduit.OnDisconnect += HConduitOnOnDisconnect;
         }
 
+        private void HConduitOnOnDisconnect(DisconnectReason reason, Guid connectionId, bool remote)
+        {
+            Disconnect();
+        }
+        /// <summary>
+        /// Uses async sockets to ensure low and efficient cpu usage
+        /// </summary>
         public void StartAcceptingData()
         {
             $"Fiber {Id} in connection id {_hConduit._wsConn.ConnectionId} has started accepting data".Log(LogLevel.Trace);
@@ -103,10 +117,11 @@ namespace horizon.Transport
                 {
                     $"Fiber {Id} in connection id {_hConduit._wsConn.ConnectionId} has disconnected from the remote".Log(LogLevel.Trace);
                     Remote.Close();
+                    Remote.Dispose();
                 }
                 catch(Exception e)
                 {
-                    $"{e.Message} {e.StackTrace}".Log(LogLevel.Trace);
+                    $"{e.Message} {e.StackTrace}".Log(LogLevel.Debug);
                 }
             }
             _hConduit.Adapter._arrayPool.Return(_buffer);

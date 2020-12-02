@@ -6,6 +6,7 @@ using System.Text;
 using System.Threading;
 using System.Threading.Tasks;
 using horizon.Handshake;
+using horizon.Packets;
 using horizon.Transport;
 using Microsoft.Extensions.Logging;
 using wstreamlib;
@@ -20,6 +21,7 @@ namespace horizon.Client
         private HorizonClientConfig _config;
         private WStream _stream;
         private Conduit _conduit;
+        public event Conduit.DisconnectDelegate OnClientDisconnect;
         /// <summary>
         /// Configure the client
         /// </summary>
@@ -43,6 +45,7 @@ namespace horizon.Client
             if (await ClientHandshake.SecurityHandshake(new BinaryAdapter(wsconn), _config))
             {
                 _conduit = new Conduit(wsconn);
+                _conduit.OnDisconnect += ConduitOnDisconnect;
                 if (_config.ProxyConfig is HorizonReverseProxyConfig rproxcfg)
                 {
                     $"Started Reverse Proxy!".Log(LogLevel.Information);
@@ -62,16 +65,59 @@ namespace horizon.Client
             }
             catch(Exception e)
             {
-                $"{e.Message} {e.StackTrace}".Log(LogLevel.Trace);
+                $"{e.Message} {e.StackTrace}".Log(LogLevel.Debug);
             }
             return false;
         }
-
+        /// <summary>
+        /// Called when the conduit is disconnected, re-fires the event for <see cref="OnClientDisconnect"/>
+        /// </summary>
+        /// <param name="reason"></param>
+        /// <param name="connectionId"></param>
+        /// <param name="remote"></param>
+        private void ConduitOnDisconnect(DisconnectReason reason, Guid connectionId, bool remote)
+        {
+            if (remote)
+            {
+                $"The remote party has disconnected with reason: {reason}".Log(LogLevel.Information);
+            }
+            else
+            {
+                $"Disconnected from remote with reason: {reason}".Log(LogLevel.Information);
+            }
+            try
+            {
+                _stream.Close().GetAwaiter().GetResult();
+            }
+            catch (Exception e)
+            {
+                $"{e.Message} {e.StackTrace}".Log(LogLevel.Debug);
+            }
+            OnClientDisconnect?.Invoke(reason, connectionId, remote);
+        }
+        /// <summary>
+        /// Call to Shutdown the client and disconnect (if applicable) from the server
+        /// </summary>
+        /// <returns></returns>
         public async Task Stop()
         {
             $"Shutting Down Client...".Log(LogLevel.Information);
-            await _conduit.Disconnect();
-            await _stream.Close();
+            try
+            {
+                await _conduit.Disconnect();
+            }
+            catch(Exception e)
+            {
+                $"{e.Message} {e.StackTrace}".Log(LogLevel.Debug);
+            }
+            try
+            {
+                await _stream.Close();
+            }
+            catch (Exception e)
+            {
+                $"{e.Message} {e.StackTrace}".Log(LogLevel.Debug);
+            }
         }
     }
 }

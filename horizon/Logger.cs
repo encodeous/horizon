@@ -10,6 +10,11 @@ namespace horizon
     {
         private static object lck = new object();
         public static LogLevel ApplicationLogLevel = LogLevel.Information;
+        /// <summary>
+        /// Horizon Logging Function, to set the Application's logging level see <see cref="ApplicationLogLevel"/>
+        /// </summary>
+        /// <param name="msg"></param>
+        /// <param name="level"></param>
         public static void Log(this string msg, LogLevel level)
         {
             if (level < ApplicationLogLevel) return;
@@ -28,7 +33,7 @@ namespace horizon
                         PrintColor(ConsoleColor.Magenta, "Error");
                         break;
                     case LogLevel.Information:
-                        PrintColor(ConsoleColor.Green, "Information");
+                        PrintColor(ConsoleColor.Green, "Info");
                         break;
                     case LogLevel.None:
                         PrintColor(ConsoleColor.White, "Log");
@@ -37,7 +42,7 @@ namespace horizon
                         PrintColor(ConsoleColor.Cyan, "Trace");
                         break;
                     case LogLevel.Warning:
-                        PrintColor(ConsoleColor.Yellow, "Critical");
+                        PrintColor(ConsoleColor.Yellow, "Warn");
                         break;
                 }
                 Console.WriteLine($"] {msg}");
