@@ -171,8 +171,23 @@ namespace horizon_cli
                     }
                     else
                     {
-                        $"The specified Server url was unable to be parsed! The url must have a scheme of either ws:// or wss://".Log(LogLevel.Critical);
-                        return;
+                        if (Uri.TryCreate("ws://" + c.ServerUrl, UriKind.Absolute, out var p))
+                        {
+                            if (p.Scheme != "wss" && p.Scheme != "ws")
+                            {
+                                $"The specified Server url was unable to be parsed! The url must have a scheme of either ws:// or wss://".Log(LogLevel.Critical);
+                                return;
+                            }
+                            else
+                            {
+                                hUri = p;
+                            }
+                        }
+                        else
+                        {
+                            $"The specified Server url was unable to be parsed! The url must have a scheme of either ws:// or wss://".Log(LogLevel.Critical);
+                            return;
+                        }
                     }
                     cfg.Server = hUri;
                     

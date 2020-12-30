@@ -350,12 +350,5 @@ namespace horizon.Transport
                 _writeSlim.Release();
             }
         }
-        /// <summary>
-        /// Close the stream and any underlying streams
-        /// </summary>
-        public void Close()
-        {
-            _connection.Close();
-        }
     }
 }

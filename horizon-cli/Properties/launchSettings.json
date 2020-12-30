@@ -2,7 +2,7 @@
   "profiles": {
     "horizon-cli": {
       "commandName": "Project",
-      "commandLineArgs": "client dc.encodeous.ca:5050 221:0.0.0.0:22:P"
+      "commandLineArgs": "server -l Trace"
     }
   }
 }
