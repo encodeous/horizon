@@ -9,6 +9,8 @@ using horizon.Client;
 using horizon.Server;
 using horizon.Transport;
 using Microsoft.Extensions.Logging;
+using wstream;
+using wstream.Crypto;
 
 namespace horizon.Handshake
 {
@@ -20,23 +22,43 @@ namespace horizon.Handshake
         /// <summary>
         /// Determine if the client should connect to the server
         /// </summary>
+        /// <param name="stream"></param>
         /// <param name="adp"></param>
         /// <param name="cfg"></param>
         /// <returns>returns false to disconnect</returns>
-        internal static async ValueTask<bool> SecurityHandshake(BinaryAdapter adp, HorizonClientConfig cfg)
+        internal static async ValueTask<bool> SecurityHandshake(WsStream stream, BinaryAdapter adp, HorizonClientConfig cfg)
         {
             try
             {
                 // Send a random byte sequence as the salt
                 var sentBytes = Handshake.GetRandBytes(64);
                 await adp.WriteByteArray(sentBytes);
+                
                 // Receive the salt from the server
                 var remoteBytes = await adp.ReadByteArray();
-                // Create a new client connection request
-                var req = new ClientConnectRequest
+                
+                // Send the hashed token to the server
+                var cTokenHash = Handshake.GetHCombined(remoteBytes, cfg.Token);
+                await adp.WriteByteArray(cTokenHash);
+                if (await adp.ReadInt() != 1)
                 {
-                    HashedBytes = Handshake.GetHCombined(remoteBytes, cfg.Token)
-                };
+                    return false;
+                }
+                // Verify the server's token
+                var serverHash = await adp.ReadByteArray();
+                // Check if the received token is valiawait adp.WriteInt(0);d (Ensures server authenticity)
+                if (!serverHash.SequenceEqual(Handshake.GetHCombined(sentBytes, cfg.Token)))
+                {
+                    // Signal Failure
+                    await adp.WriteInt(0);
+                    return false;
+                }
+                await adp.WriteInt(1);
+
+                await stream.EncryptAesAsync(Handshake.GetHCombined2(sentBytes, remoteBytes, cfg.Token));
+                // SECURITY HEADER DONE
+
+                var req = new ClientConnectRequest();
                 // Check if the client is configured as a proxy or reverse proxy
                 if (cfg.ProxyConfig is HorizonProxyConfig pcfg)
                 {
@@ -74,16 +96,7 @@ namespace horizon.Handshake
                     }
                     return false;
                 }
-                // Check if the received token is valid (Ensures server authenticity)
-                if (serverResponse.HashedBytes.SequenceEqual(Handshake.GetHCombined(sentBytes, cfg.Token)))
-                {
-                    // Signal Success
-                    await adp.WriteInt(1);
-                    return true;
-                }
-                // Signal Failure
-                await adp.WriteInt(0);
-                return false;
+                return true;
             }
             catch(Exception e)
             {

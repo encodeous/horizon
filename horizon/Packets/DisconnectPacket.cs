@@ -13,9 +13,15 @@ namespace horizon.Packets
     {
         public PacketType PacketId => PacketType.DisconnectPacket;
         public DisconnectReason Reason;
-        public ValueTask SendPacket(BinaryAdapter adapter)
+        public string StringReason;
+        public async ValueTask SendPacket(BinaryAdapter adapter)
         {
-            return adapter.WriteInt((int)Reason, false);
+            if (Reason == DisconnectReason.Textual)
+            {
+                await adapter.WriteInt((int)Reason, false);
+                await adapter.WriteString(StringReason);
+            }
+            await adapter.WriteInt((int)Reason, false);
         }
     }
 }

@@ -31,7 +31,11 @@ namespace horizon.Transport
             _minBufferSize = minBuffer;
             _hConduit = link;
             // Register the Fiber Creation delegate
-            link.FiberCreate += FiberCreate;
+        }
+
+        public void Initialize()
+        {
+            _hConduit.FiberCreate += FiberCreate;
         }
 
         private Fiber FiberCreate()
@@ -45,7 +49,7 @@ namespace horizon.Transport
             catch(Exception e)
             {
                 // Do not allow the client to connect
-                $"{e.Message} {e.StackTrace}".Log(LogLevel.Trace);
+                $"Exception occurred while creating fiber: {e.Message} {e.StackTrace}".Log(LogLevel.Error);
                 return null;
             }
         }

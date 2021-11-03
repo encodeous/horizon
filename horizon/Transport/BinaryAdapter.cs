@@ -7,7 +7,7 @@ using System.Security.Cryptography;
 using System.Text;
 using System.Threading;
 using System.Threading.Tasks;
-using wstreamlib;
+using wstream;
 
 namespace horizon.Transport
 {
@@ -16,7 +16,7 @@ namespace horizon.Transport
     /// </summary>
     public class BinaryAdapter
     {
-        private WsConnection _connection;
+        private WsStream _connection;
 
         internal readonly ArrayPool<byte> _arrayPool;
 
@@ -25,7 +25,7 @@ namespace horizon.Transport
         internal SemaphoreSlim _readSlim = new SemaphoreSlim(1, 1);
         internal SemaphoreSlim _writeSlim = new SemaphoreSlim(1, 1);
 
-        public BinaryAdapter(WsConnection connection)
+        public BinaryAdapter(WsStream connection)
         {
             _connection = connection;
             _arrayPool = ArrayPool<byte>.Create();
@@ -43,7 +43,7 @@ namespace horizon.Transport
                 int remaining = buf.Count;
                 while (remaining > 0)
                 {
-                    int read = await _connection.Read(buf.Slice(offset));
+                    int read = await _connection.ReadAsync(buf.Slice(offset));
                     if (read <= 0)
                         throw new EndOfStreamException("Unexpected End Of Stream in Binary Adapter");
                     remaining -= read;
@@ -58,7 +58,7 @@ namespace horizon.Transport
                 int remaining = buf.Count;
                 while (remaining > 0)
                 {
-                    int read = await _connection.Read(buf.Slice(offset));
+                    int read = await _connection.ReadAsync(buf.Slice(offset));
                     if (read <= 0)
                         throw new EndOfStreamException("Unexpected End Of Stream in Binary Adapter");
                     remaining -= read;
@@ -230,13 +230,13 @@ namespace horizon.Transport
         {
             if (!l)
             {
-                await _connection.Write(buf);
+                await _connection.WriteAsync(buf);
                 return;
             }
             try
             {
                 await _writeSlim.WaitAsync();
-                await _connection.Write(buf);
+                await _connection.WriteAsync(buf);
             }
             finally
             {
@@ -261,7 +261,7 @@ namespace horizon.Transport
                     BinaryPrimitives.WriteInt32BigEndian(buf, val);
                 }
 
-                await _connection.Write(new ArraySegment<byte>(buf, 0, 4));
+                await _connection.WriteAsync(new ArraySegment<byte>(buf, 0, 4));
                 _arrayPool.Return(buf);
                 return;
             }
@@ -278,7 +278,7 @@ namespace horizon.Transport
                     BinaryPrimitives.WriteInt32BigEndian(buf, val);
                 }
 
-                await _connection.Write(new ArraySegment<byte>(buf, 0, 4));
+                await _connection.WriteAsync(new ArraySegment<byte>(buf, 0, 4));
                 _arrayPool.Return(buf);
             }
             finally
@@ -326,7 +326,7 @@ namespace horizon.Transport
                 {
                     BinaryPrimitives.WriteInt64BigEndian(buf, val);
                 }
-                await _connection.Write(new ArraySegment<byte>(buf, 0, 8));
+                await _connection.WriteAsync(new ArraySegment<byte>(buf, 0, 8));
                 _arrayPool.Return(buf);
                 return;
             }
@@ -342,13 +342,24 @@ namespace horizon.Transport
                 {
                     BinaryPrimitives.WriteInt64BigEndian(buf, val);
                 }
-                await _connection.Write(new ArraySegment<byte>(buf, 0, 8));
+                await _connection.WriteAsync(new ArraySegment<byte>(buf, 0, 8));
                 _arrayPool.Return(buf);
             }
             finally
             {
                 _writeSlim.Release();
             }
+        }
+
+        public async ValueTask<string> ReadString()
+        {
+            var arr = await ReadByteArray();
+            return Encoding.UTF8.GetString(arr);
+        }
+        
+        public ValueTask WriteString(string s)
+        {
+            return WriteByteArray(Encoding.UTF8.GetBytes(s));
         }
     }
 }

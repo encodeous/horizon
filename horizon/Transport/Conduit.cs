@@ -9,7 +9,7 @@ using System.Threading;
 using System.Threading.Tasks;
 using horizon.Packets;
 using Microsoft.Extensions.Logging;
-using wstreamlib;
+using wstream;
 
 namespace horizon.Transport
 {
@@ -31,9 +31,9 @@ namespace horizon.Transport
         /// </summary>
         private DateTime _lastHeartBeat = DateTime.Now;
         private readonly ConcurrentDictionary<int, Fiber> _fibers;
-        internal readonly WsConnection _wsConn;
+        internal readonly WsStream _wsConn;
 
-        public delegate void DisconnectDelegate(DisconnectReason reason, Guid clientId, bool remote);
+        public delegate void DisconnectDelegate(DisconnectReason reason, Guid clientId, string disconnectMessage, bool remote);
         /// <summary>
         /// Called on Disconnection of the Tunnel
         /// </summary>
@@ -45,20 +45,24 @@ namespace horizon.Transport
         /// </summary>
         public CreateFiberCallback FiberCreate;
 
-        public Conduit(WsConnection rawWs, int timeoutMilliseconds = 5000)
+        public Conduit(WsStream rawWs)
         {
             _wsConn = rawWs;
             _fibers = new ConcurrentDictionary<int, Fiber>();
             // Wrap the binary stream for easier read/write
             Adapter = new BinaryAdapter(rawWs);
             Connected = true;
+            // Register websocket disconnection
+            rawWs.ConnectionClosedEvent += RawWsOnConnectionClosedEvent;
+        }
+
+        public void ActivateConduit(int timeoutMilliseconds = 5000)
+        {
             // Start Routing, Local Socket Checking and Heartbeat functions
             Task.Run(Router);
             Task.Run(FiberThread);
             Task.Run(Dispatcher);
             Task.Run(()=>Heartbeat(timeoutMilliseconds));
-            // Register websocket disconnection
-            rawWs.ConnectionClosedEvent += RawWsOnConnectionClosedEvent;
         }
         /// <summary>
         /// Heartbeat function, checks every <seealso cref="timeoutMilliseconds"/> milliseconds.
@@ -71,6 +75,7 @@ namespace horizon.Transport
             {
                 if (DateTime.Now - _lastHeartBeat > TimeSpan.FromMilliseconds(timeoutMilliseconds))
                 {
+                    $"The remote has not responded to the heartbeat! Disconnecting...".Log(LogLevel.Warning);
                     await Disconnect(DisconnectReason.Timeout);
                     break;
                 }
@@ -121,17 +126,22 @@ namespace horizon.Transport
         /// This function is called when the tunnel is abruptly closed
         /// </summary>
         /// <param name="connection"></param>
-        private void RawWsOnConnectionClosedEvent(WsConnection connection) => RemoteDisconnect(DisconnectReason.Terminated);
+        private void RawWsOnConnectionClosedEvent(WsStream connection)
+        {
+            RemoteDisconnect(DisconnectReason.Terminated);
+        }
+
         /// <summary>
         /// Call to signal that the Remote party has disconnected
         /// </summary>
         /// <param name="reason"></param>
-        private void RemoteDisconnect(DisconnectReason reason = DisconnectReason.Shutdown)
+        /// <param name="message"></param>
+        private void RemoteDisconnect(DisconnectReason reason = DisconnectReason.Shutdown, string message = null)
         {
             if (Connected)
             {
                 Connected = false;
-                OnDisconnect?.Invoke(reason, _wsConn.ConnectionId, true);
+                OnDisconnect?.Invoke(reason, _wsConn.ConnectionId, message, true);
                 if (_wsConn.Connected)
                 {
                     try
@@ -146,11 +156,13 @@ namespace horizon.Transport
 
             }
         }
+
         /// <summary>
         /// Disconnect from the remote, use <code>DisconnectReason.Terminated</code> to kill the connection
         /// </summary>
         /// <param name="reason"></param>
-        public async Task Disconnect(DisconnectReason reason = DisconnectReason.Shutdown)
+        /// <param name="message"></param>
+        public async Task Disconnect(DisconnectReason reason = DisconnectReason.Shutdown, string message = null)
         {
             if (Connected)
             {
@@ -175,18 +187,18 @@ namespace horizon.Transport
                         {
                             try
                             {
-                                await _wsConn.Close();
+                                await _wsConn.CloseAsync();
                             }
                             catch(Exception e)
                             {
                                 $"{e.Message} {e.StackTrace}".Log(LogLevel.Trace);
                             }
                             Connected = false;
-                            OnDisconnect?.Invoke(DisconnectReason.Terminated, _wsConn.ConnectionId, false);
+                            OnDisconnect?.Invoke(DisconnectReason.Terminated, _wsConn.ConnectionId, message, false);
                         }
                         else
                         {
-                            OnDisconnect?.Invoke(reason, _wsConn.ConnectionId, false);
+                            OnDisconnect?.Invoke(reason, _wsConn.ConnectionId, message,false);
                         }
                     }).Start();
                 }
@@ -198,14 +210,14 @@ namespace horizon.Transport
                     {
                         try
                         {
-                            await _wsConn.Close();
+                            await _wsConn.CloseAsync();
                         }
                         catch(Exception e)
                         {
                             $"{e.Message} {e.StackTrace}".Log(LogLevel.Trace);
                         }
                     }
-                    OnDisconnect?.Invoke(reason, _wsConn.ConnectionId, false);
+                    OnDisconnect?.Invoke(reason, _wsConn.ConnectionId, message,false);
                 }
             }
             Connected = false;
@@ -245,79 +257,85 @@ namespace horizon.Transport
         {
             while (Connected)
             {
-                // read packet type
-                PacketType packet = (PacketType) await Adapter.ReadInt();
-                if (packet == PacketType.Heartbeat)
+                try
                 {
-                    // update heartbeat time
-                    _lastHeartBeat = DateTime.Now;
-                }
-                else if (packet == PacketType.AddFiber)
-                {
-                    var id = await Adapter.ReadInt();
-                    _connectQueue.Enqueue(id);
-                }
-                else if (packet == PacketType.RemoveFiber)
-                {
-                    var id = await Adapter.ReadInt();
-                    _disconnectQueue.Enqueue(id);
-                }
-                else if (packet == PacketType.FiberNotAdded)
-                {
-                    var id = await Adapter.ReadInt();
-                    if (_fibers.ContainsKey(id))
+                    await Adapter._writeSlim.WaitAsync();
+                    // read packet type
+                    PacketType packet = (PacketType) await Adapter.ReadInt(false);
+                    if (packet == PacketType.Heartbeat)
                     {
-                        await RemoveFiber(id, true);
+                        // update heartbeat time
+                        _lastHeartBeat = DateTime.Now;
                     }
-                }
-                else if(packet == PacketType.FiberAdded)
-                {
-                    var id = await Adapter.ReadInt();
-                    if (_fibers.ContainsKey(id))
+                    else if (packet == PacketType.AddFiber)
                     {
-                        _fibers[id].StartAcceptingData();
+                        var id = await Adapter.ReadInt(false);
+                        _connectQueue.Enqueue(id);
                     }
-                }
-                else if (packet == PacketType.DataPacket)
-                {
-                    await Adapter._readSlim.WaitAsync();
-                    var fiberId = await Adapter.ReadInt(false);
-                    var val = await Adapter.ReadByteArrayFast(false);
-                    try
+                    else if (packet == PacketType.RemoveFiber)
                     {
-                        // check if the fiber is connected, if it's not just discard the packet as it might have been buffered slightly
-                        if (_fibers.ContainsKey(fiberId) && _fibers[fiberId].Connected)
+                        var id = await Adapter.ReadInt(false);
+                        _disconnectQueue.Enqueue(id);
+                    }
+                    else if (packet == PacketType.FiberNotAdded)
+                    {
+                        var id = await Adapter.ReadInt(false);
+                        if (_fibers.ContainsKey(id))
                         {
-                            if (!_fibers[fiberId].Send(val))
+                            await RemoveFiber(id, true);
+                        }
+                    }
+                    else if (packet == PacketType.FiberAdded)
+                    {
+                        var id = await Adapter.ReadInt(false);
+                        if (_fibers.ContainsKey(id))
+                        {
+                            _fibers[id].StartAcceptingData();
+                        }
+                    }
+                    else if (packet == PacketType.DataPacket)
+                    {
+                        var fiberId = await Adapter.ReadInt(false);
+                        var val = await Adapter.ReadByteArrayFast(false);
+                        try
+                        {
+                            // check if the fiber is connected, if it's not just discard the packet as it might have been buffered slightly
+                            if (_fibers.ContainsKey(fiberId) && _fibers[fiberId].Connected)
                             {
-                                await RemoveFiber(fiberId);
+                                if (!_fibers[fiberId].Send(val))
+                                {
+                                    await RemoveFiber(fiberId);
+                                }
+                            }
+                            else
+                            {
+                                // stray packet
                             }
                         }
-                        else
+                        catch (Exception e)
                         {
-                            // stray packet
+                            $"{e.Message} {e.StackTrace}".Log(LogLevel.Trace);
+                            await RemoveFiber(fiberId);
+                        }
+                        finally
+                        {
+                            Adapter.ReturnByte(val.Array);
                         }
                     }
-                    catch(Exception e)
+                    else if (packet == PacketType.DisconnectPacket)
                     {
-                        $"{e.Message} {e.StackTrace}".Log(LogLevel.Trace);
-                        await RemoveFiber(fiberId);
+                        var reason = (DisconnectReason) await Adapter.ReadInt(false);
+                        // Handle disconnection
+                        RemoteDisconnect(reason);
                     }
-                    finally
+                    else
                     {
-                        Adapter.ReturnByte(val.Array);
-                        Adapter._readSlim.Release();
+                        $"Client Conduit has been De-Synchronized".Log(LogLevel.Error);
                     }
                 }
-                else if (packet == PacketType.DisconnectPacket)
+                finally
                 {
-                    var reason = (DisconnectReason) await Adapter.ReadInt();
-                    // Handle disconnection
-                    RemoteDisconnect(reason);
-                }
-                else
-                {
-                    $"Client Conduit has been De-Synchronized".Log(LogLevel.Error);
+                    Adapter._writeSlim.Release();
                 }
             }
         }
@@ -365,7 +383,7 @@ namespace horizon.Transport
             }
         }
         private readonly SemaphoreSlim _connectionSlim = new SemaphoreSlim(1);
-        private int _idCnt = 0;
+        private int _idCnt = 1;
         /// <summary>
         /// Initiate a new fiber in the conduit
         /// </summary>

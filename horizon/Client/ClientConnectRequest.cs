@@ -20,10 +20,6 @@ namespace horizon.Client
             Proxy,
             ReverseProxy
         }
-        /// <summary>
-        /// Client token hashed with a random salt sent by the server to establish authenticity
-        /// </summary>
-        public byte[] HashedBytes { get; set; }
         public ConnectType CType { get; set; }
         /// <summary>
         /// Proxying: Address of the target, to be resolved by the server

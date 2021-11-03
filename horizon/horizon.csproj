@@ -3,12 +3,18 @@
 	<PropertyGroup>
 		<TargetFramework>net5.0</TargetFramework>
 		<AllowUnsafeBlocks>true</AllowUnsafeBlocks>
-		<Version>0.0.0</Version>
+		<Version>1.0.0</Version>
 		<AnalysisLevel>latest</AnalysisLevel>
+		<GeneratePackageOnBuild>true</GeneratePackageOnBuild>
+		<PackageRequireLicenseAcceptance>true</PackageRequireLicenseAcceptance>
+		<PackageLicenseExpression>MIT</PackageLicenseExpression>
+		<PackageProjectUrl>https://github.com/encodeous/horizon</PackageProjectUrl>
+		<RepositoryUrl>https://github.com/encodeous/horizon</RepositoryUrl>
+		<PackageId>Encodeous.horizon</PackageId>
 	</PropertyGroup>
 	<ItemGroup>
-		<FrameworkReference Include="Microsoft.AspNetCore.App" />
-		<PackageReference Include="wstreamlib" Version="1.3.6" />
+		<PackageReference Include="wstream" Version="2.1.2" />
+		<PackageReference Include="wstream.Crypto" Version="2.1.1" />
 	</ItemGroup>
 
 </Project>

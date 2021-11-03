@@ -27,10 +27,6 @@ namespace horizon_cli
             public int Port { get; set; }
             [Option('c', "config", Default = "", Required = false, HelpText = "Specify a horizon configuration path, defaults to current directory.")]
             public string ConfigPath { get; set; }
-            [Option('s', "cert", Default = null, Required = false, HelpText = "Specify a SSL certificate path for securing connections.")]
-            public string CertPath { get; set; }
-            [Option('p', "cert-pass", Default = null, Required = false, HelpText = "SSL Certificate password (if applicable).")]
-            public string CertPass { get; set; }
             [Option('l', "log", Default = LogLevel.Information, Required = false, HelpText = "Log Output Level, [Trace, Debug, Information, Warning, Error, Critical, None]")]
             public LogLevel LogLevel { get; set; }
         }
@@ -116,23 +112,11 @@ namespace horizon_cli
                         cfg.Bind = "0.0.0.0:" + s.Port;
                     }
 
-                    foreach (var user in cfg.Users)
+                    if (cfg.Token == "default")
                     {
-                        if (user.Token == "default" || user.Token == "default-whitelist")
-                        {
-                            $"Default configuration detected, it is highly recommended to change the default authentication token!".Log(LogLevel.Critical);
-                            break;
-                        }
+                        $"Default configuration detected, it is highly recommended to change the default authentication token!".Log(LogLevel.Critical);
                     }
-
-                    X509Certificate2 cert = null;
-                    if (s.CertPath != null)
-                    {
-                        cert = s.CertPass != null ?
-                            X509Certificate2.CreateFromEncryptedPemFile(s.CertPath, s.CertPass) :
-                            X509Certificate2.CreateFromPemFile(s.CertPath);
-                    }
-                    Server = new HorizonServer(cfg, cert);
+                    Server = new HorizonServer(cfg);
                     Server.Start();
                     $"Press Ctrl + C to exit".Log(LogLevel.Information);
                     while (!Stopped)
@@ -232,7 +216,7 @@ namespace horizon_cli
             });
         }
 
-        private static void ClientOnClientDisconnect(DisconnectReason reason, Guid clientid, bool remote)
+        private static void ClientOnClientDisconnect(DisconnectReason reason, Guid clientid, string message, bool remote)
         {
             Stopped = true;
         }

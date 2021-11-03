@@ -13,6 +13,8 @@ using horizon.Server;
 using horizon.Transport;
 using Microsoft.AspNetCore.Connections;
 using Microsoft.Extensions.Logging;
+using wstream;
+using wstream.Crypto;
 
 namespace horizon.Handshake
 {
@@ -24,51 +26,61 @@ namespace horizon.Handshake
         /// <summary>
         /// Determines if a client is allowed to connect to the server
         /// </summary>
+        /// <param name="stream"></param>
         /// <param name="adp"></param>
         /// <param name="cfg"></param>
         /// <returns>returns what the client requested, or null if the client should not be allowed</returns>
-        internal static async ValueTask<ClientConnectRequest> SecurityHandshake(BinaryAdapter adp, HorizonServerConfig cfg)
+        internal static async ValueTask<ClientConnectRequest> SecurityHandshake(WsStream stream, BinaryAdapter adp, HorizonServerConfig cfg)
         {
             try
             {
                 // Send server salt bytes
                 var sentBytes = Handshake.GetRandBytes(64);
+                var cvTokenHash = Handshake.GetHCombined(sentBytes, cfg.Token);
                 await adp.WriteByteArray(sentBytes);
+                
                 // Get the salt bytes from the client
                 var remoteBytes = await adp.ReadByteArray();
+                
+                // Get the client's hashed token
+                var cTokenHash = await adp.ReadByteArray();
+                if (!cvTokenHash.SequenceEqual(cTokenHash))
+                {
+                    // Signal Failure
+                    await adp.WriteInt(0);
+                    return null;
+                }
+                await adp.WriteInt(1);
+
+                var sTokenHash = Handshake.GetHCombined(remoteBytes, cfg.Token);
+                // Make sure the client trusts the server
+                await adp.WriteByteArray(sTokenHash);
+                if (await adp.ReadInt() != 1)
+                {
+                    return null;
+                }
+                
+                await stream.EncryptAesAsync(Handshake.GetHCombined2(sentBytes, remoteBytes, cfg.Token));
+                // SECURITY HEADER DONE
+                
                 // Get the request from the client
                 var clientRequest =
                     (ClientConnectRequest) JsonSerializer.Deserialize(await adp.ReadByteArray(),
                         typeof(ClientConnectRequest));
-
-                Debug.Assert(clientRequest != null, nameof(clientRequest) + " != null");
-                // Find the user token of the client by brute force
-                var user = LookupUser(sentBytes, clientRequest.HashedBytes, cfg);
+                
                 var response = new ServerConnectionResponse();
-                // Check if the user was successfully found
-                if (user == null)
+                // Verify if the client is authorized to connect
+                if (VerifyRequest(clientRequest, cfg))
                 {
-                    response.Accepted = false;
-                    response.DisconnectMessage = "The user was not found!";
-                    await adp.WriteByteArray(JsonSerializer.SerializeToUtf8Bytes(response));
-                    return null;
+                    response.Accepted = true;
                 }
                 else
                 {
-                    // Verify if the client is authorized to connect
-                    if (VerifyRequest(clientRequest, user))
-                    {
-                        response.Accepted = true;
-                        response.HashedBytes = Handshake.GetHCombined(remoteBytes, user.Token);
-                    }
-                    else
-                    {
-                        response.Accepted = false;
-                        response.DisconnectMessage =
-                            "The specified connection requirements is not allowed by the server.";
-                        await adp.WriteByteArray(JsonSerializer.SerializeToUtf8Bytes(response));
-                        return null;
-                    }
+                    response.Accepted = false;
+                    response.DisconnectMessage =
+                        "The specified connection requirements is not allowed by the server.";
+                    await adp.WriteByteArray(JsonSerializer.SerializeToUtf8Bytes(response));
+                    return null;
                 }
                 // Validate the endpoint
                 if ((string.IsNullOrEmpty(clientRequest.ProxyAddress) || clientRequest.ProxyPort < 0 || clientRequest.ProxyPort > 65535) && clientRequest.CType == ClientConnectRequest.ConnectType.Proxy)
@@ -91,11 +103,7 @@ namespace horizon.Handshake
                 // Send the server response
                 await adp.WriteByteArray(JsonSerializer.SerializeToUtf8Bytes(response));
                 // Check if the client wants to connect
-                if (await adp.ReadInt() == 1)
-                {
-                    return clientRequest;
-                }
-                return null;
+                return clientRequest;
             }
             catch(Exception e)
             {
@@ -133,21 +141,21 @@ namespace horizon.Handshake
         /// Check if the client's request is allowed by the server configuration
         /// </summary>
         /// <param name="req"></param>
-        /// <param name="user"></param>
+        /// <param name="conf"></param>
         /// <returns></returns>
-        private static bool VerifyRequest(ClientConnectRequest req, HorizonUser user)
+        private static bool VerifyRequest(ClientConnectRequest req, HorizonServerConfig conf)
         {
             if (req.CType == ClientConnectRequest.ConnectType.Proxy)
             {
                 bool matched = false;
-                foreach (var pattern in user.RemotesPattern)
+                foreach (var pattern in conf.RemotesPattern)
                 {
                     if (!Regex.IsMatch(req.ProxyAddress, pattern.HostRegex) || pattern.PortRangeStart > req.ProxyPort ||
                         req.ProxyPort > pattern.PortRangeEnd) continue;
                     matched = true;
                     break;
                 }
-                if (user.Whitelist)
+                if (conf.Whitelist)
                 {
                     return matched;
                 }
@@ -158,8 +166,8 @@ namespace horizon.Handshake
             }
             else if(req.CType == ClientConnectRequest.ConnectType.ReverseProxy)
             {
-                bool matched = user.ReverseBinds.Contains(req.ListenPort);
-                if (user.Whitelist)
+                bool matched = conf.ReverseBinds.Contains(req.ListenPort);
+                if (conf.Whitelist)
                 {
                     return matched;
                 }
@@ -170,25 +178,6 @@ namespace horizon.Handshake
             }
 
             return false;
-        }
-        /// <summary>
-        /// Find the user by looking through all the users and checking the hash one by one, this prevents either side from stealing the client authentication token since it is actually not sent
-        /// </summary>
-        /// <param name="salt"></param>
-        /// <param name="hash"></param>
-        /// <param name="cfg"></param>
-        /// <returns></returns>
-        private static HorizonUser LookupUser(byte[] salt, byte[] hash, HorizonServerConfig cfg)
-        {
-            foreach (var k in cfg.Users)
-            {
-                if (Handshake.GetHCombined(salt, k.Token).SequenceEqual(hash))
-                {
-                    return k;
-                }
-            }
-
-            return null;
         }
     }
 }

@@ -8,6 +8,7 @@ using System.Threading;
 using System.Threading.Tasks;
 using horizon.Packets;
 using horizon.Transport;
+using Microsoft.Extensions.Logging;
 
 namespace horizon.Transport
 {
@@ -35,12 +36,16 @@ namespace horizon.Transport
             LingerOption lo = new LingerOption(false, 1);
             _hSocket.SetSocketOption(SocketOptionLevel.Socket, SocketOptionName.Linger, lo);
             _hSocket.Bind(localEp);
-            // Create the listener on a separate thread
-            Task.Run(Listen);
             _hConduit.OnDisconnect += HConduitOnOnDisconnect;
         }
 
-        private void HConduitOnOnDisconnect(DisconnectReason reason, Guid connectionId, bool remote)
+        public void Initialize()
+        {
+            // Create the listener on a separate thread
+            Task.Run(Listen);
+        }
+
+        private void HConduitOnOnDisconnect(DisconnectReason reason, Guid connectionId, string message, bool remote)
         {
             _hSocket.Close();
             _hSocket.Dispose();
@@ -51,13 +56,21 @@ namespace horizon.Transport
         /// </summary>
         private async Task Listen()
         {
-            _hSocket.Listen(10);
+            _hSocket.Listen(1000);
+
             while (_hConduit.Connected)
             {
-                // Listen for clients and add a client fiber when a client connects
-                var sock = await _hSocket.AcceptAsync();
-                var fiber = new Fiber(sock, _hConduit.Adapter._arrayPool.Rent(_minBufferSize), _hConduit);
-                await _hConduit.AddFiber(fiber);
+                try
+                {
+                    // Listen for clients and add a client fiber when a client connects
+                    var sock = await _hSocket.AcceptAsync();
+                    var fiber = new Fiber(sock, _hConduit.Adapter._arrayPool.Rent(_minBufferSize), _hConduit);
+                    await _hConduit.AddFiber(fiber);
+                }
+                catch (Exception e)
+                {
+                    $"Exception occurred while adding fiber: {e.Message} {e.StackTrace}".Log(LogLevel.Error);
+                }
             }
             _hSocket.Dispose();
         }

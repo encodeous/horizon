@@ -4,11 +4,6 @@
     <OutputType>Exe</OutputType>
     <TargetFramework>net5.0</TargetFramework>
   </PropertyGroup>
-
-  <ItemGroup>
-    <PackageReference Include="Nito.AsyncEx" Version="5.1.0" />
-  </ItemGroup>
-
   <ItemGroup>
     <ProjectReference Include="..\horizon\horizon.csproj" />
   </ItemGroup>

@@ -12,7 +12,6 @@ namespace horizon.Server
     class ServerConnectionResponse
     {
         public bool Accepted { get; set; }
-        public byte[] HashedBytes { get; set; }
         public string DisconnectMessage { get; set; }
         
     }

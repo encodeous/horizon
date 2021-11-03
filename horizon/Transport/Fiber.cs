@@ -45,7 +45,7 @@ namespace horizon.Transport
             _hConduit.OnDisconnect += HConduitOnOnDisconnect;
         }
 
-        private void HConduitOnOnDisconnect(DisconnectReason reason, Guid connectionId, bool remote)
+        private void HConduitOnOnDisconnect(DisconnectReason reason, Guid connectionId, string message, bool remote)
         {
             Disconnect();
         }
@@ -80,7 +80,7 @@ namespace horizon.Transport
             }
             catch(Exception e)
             {
-                $"{e.Message} {e.StackTrace}".Log(LogLevel.Trace);
+                $"Exception occurred while reading from fiber: {e.Message} {e.StackTrace}".Log(LogLevel.Trace);
                 _hConduit.RemoveFiber(Id).GetAwaiter().GetResult();
             }
         }
@@ -92,17 +92,16 @@ namespace horizon.Transport
                 int sent = 0;
                 while (sent < total)
                 {
-                    int len = Remote.Send(data.Slice(sent));
+                    int len = Remote.Send(data[sent..]);
                     sent += len;
                 }
             }
             catch(Exception e)
             {
-                $"{e.Message} {e.StackTrace}".Log(LogLevel.Trace);
+                $"Exception occurred while writing to fiber: {e.Message} {e.StackTrace}".Log(LogLevel.Trace);
                 _hConduit.RemoveFiber(Id).GetAwaiter().GetResult();
                 return false;
             }
-
             return true;
         }
 

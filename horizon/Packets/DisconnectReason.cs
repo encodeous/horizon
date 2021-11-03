@@ -20,6 +20,10 @@ namespace horizon.Packets
         /// <summary>
         /// Forceful shutdown for unknown reason
         /// </summary>
-        Terminated
+        Terminated,
+        /// <summary>
+        /// Usually an error or warning, a string displaying the disconnect reason
+        /// </summary>
+        Textual
     }
 }
