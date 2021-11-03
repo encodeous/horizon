@@ -19,7 +19,8 @@ namespace horizon.Client
     public class HorizonClient
     {
         private HorizonClientConfig _config;
-        private WsClient _transportClient;
+        private WsClient _signalClient;
+        private WsClient _dataClient;
         private Conduit _conduit;
         private WsStream _conn = null;
         public event Conduit.DisconnectDelegate OnClientDisconnect;
@@ -39,13 +40,16 @@ namespace horizon.Client
         {
             $"Connecting to {_config.Server}".Log(LogLevel.Information);
             // Start a WStream client
-            _transportClient = new WsClient();
+            _signalClient = new WsClient();
             // Connect the wstream client
-            _conn = await _transportClient.ConnectAsync(_config.Server);
+            _conn = await _signalClient.ConnectAsync(_config.Server);
             // Check if the security handshake is successful
-            if (await ClientHandshake.SecurityHandshake(_conn, new BinaryAdapter(_conn), _config))
+            var adpc = new BinaryAdapter(_conn);
+            await adpc.WriteInt(0);
+            var (success, key) = await ClientHandshake.SecurityHandshake(_conn, adpc, _config);
+            if (success)
             {
-                _conduit = new Conduit(_conn);
+                _conduit = new Conduit(_conn, key);
                 _conduit.OnDisconnect += ConduitOnDisconnect;
                 if (_config.ProxyConfig is HorizonReverseProxyConfig rproxcfg)
                 {
@@ -59,6 +63,14 @@ namespace horizon.Client
                     var v = new HorizonInput(new IPEndPoint(IPAddress.Any, proxcfg.LocalPort), _conduit);
                     v.Initialize();
                 }
+
+                _dataClient = new WsClient();
+
+                var dataConn = await _dataClient.ConnectAsync(_config.Server);
+                var adpd = new BinaryAdapter(dataConn);
+                await adpd.WriteInt(1);
+                await adpd.WriteByteArray(_conn.ConnectionId.ToByteArray());
+                await _conduit.InitializeDataStreamAsync(dataConn);
                 _conduit.ActivateConduit();
                 return true;
             }

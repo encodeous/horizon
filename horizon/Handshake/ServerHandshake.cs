@@ -30,7 +30,7 @@ namespace horizon.Handshake
         /// <param name="adp"></param>
         /// <param name="cfg"></param>
         /// <returns>returns what the client requested, or null if the client should not be allowed</returns>
-        internal static async ValueTask<ClientConnectRequest> SecurityHandshake(WsStream stream, BinaryAdapter adp, HorizonServerConfig cfg)
+        internal static async ValueTask<(ClientConnectRequest, byte[])> SecurityHandshake(WsStream stream, BinaryAdapter adp, HorizonServerConfig cfg)
         {
             try
             {
@@ -48,7 +48,7 @@ namespace horizon.Handshake
                 {
                     // Signal Failure
                     await adp.WriteInt(0);
-                    return null;
+                    return (null, null);
                 }
                 await adp.WriteInt(1);
 
@@ -57,10 +57,11 @@ namespace horizon.Handshake
                 await adp.WriteByteArray(sTokenHash);
                 if (await adp.ReadInt() != 1)
                 {
-                    return null;
+                    return (null, null);
                 }
-                
-                await stream.EncryptAesAsync(Handshake.GetHCombined2(sentBytes, remoteBytes, cfg.Token));
+
+                var eKey = Handshake.GetHCombined2(sentBytes, remoteBytes, cfg.Token);
+                await stream.EncryptAesAsync(eKey);
                 // SECURITY HEADER DONE
                 
                 // Get the request from the client
@@ -80,7 +81,7 @@ namespace horizon.Handshake
                     response.DisconnectMessage =
                         "The specified connection requirements is not allowed by the server.";
                     await adp.WriteByteArray(JsonSerializer.SerializeToUtf8Bytes(response));
-                    return null;
+                    return (null, null);
                 }
                 // Validate the endpoint
                 if ((string.IsNullOrEmpty(clientRequest.ProxyAddress) || clientRequest.ProxyPort < 0 || clientRequest.ProxyPort > 65535) && clientRequest.CType == ClientConnectRequest.ConnectType.Proxy)
@@ -88,7 +89,7 @@ namespace horizon.Handshake
                     response.Accepted = false;
                     response.DisconnectMessage = "The specified endpoint is not valid";
                     await adp.WriteByteArray(JsonSerializer.SerializeToUtf8Bytes(response));
-                    return null;
+                    return (null, null);
                 }
                 // Check if the port is available if the client requested a reverse proxy
                 if (clientRequest.CType == ClientConnectRequest.ConnectType.ReverseProxy &&
@@ -98,19 +99,19 @@ namespace horizon.Handshake
                     response.DisconnectMessage =
                         "The specified port is already bound!";
                     await adp.WriteByteArray(JsonSerializer.SerializeToUtf8Bytes(response));
-                    return null;
+                    return (null, null);
                 }
                 // Send the server response
                 await adp.WriteByteArray(JsonSerializer.SerializeToUtf8Bytes(response));
                 // Check if the client wants to connect
-                return clientRequest;
+                return (clientRequest, eKey);
             }
             catch(Exception e)
             {
                 $"Exception occurred on Server Handshake: {e.Message} {e.StackTrace}".Log(LogLevel.Debug);
             }
 
-            return null;
+            return (null, null);
         }
         /// <summary>
         /// Checks if a port is already being used by another program, or connection

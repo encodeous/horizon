@@ -1,4 +1,5 @@
 ﻿using System;
+using System.Collections.Concurrent;
 using System.Collections.Generic;
 using System.Net;
 using System.Security.Cryptography;
@@ -22,6 +23,7 @@ namespace horizon.Server
     {
         private HorizonServerConfig _config;
         private WsServer _wsServer;
+        private ConcurrentDictionary<Guid, Conduit> _clients;
 
         /// <summary>
         /// Configure the server
@@ -31,6 +33,7 @@ namespace horizon.Server
         {
             _config = config;
             _wsServer = new WsServer();
+            _clients = new ConcurrentDictionary<Guid, Conduit>();
         }
 
         /// <summary>
@@ -65,9 +68,42 @@ namespace horizon.Server
         private async Task AcceptConnectionsAsync(WsStream connection)
         {
             // Log
+            var adp = new BinaryAdapter(connection);
+            int isData = await adp.ReadInt();
+            if (isData == 1)
+            {
+                try
+                {
+                    var id = new Guid(await adp.ReadByteArray());
+                    if (_clients.ContainsKey(id) && _clients[id]._dataStream == null)
+                    {
+                        $"Data stream connected with id {connection.ConnectionId}".Log(LogLevel.Debug);
+                        await _clients[id].InitializeDataStreamAsync(connection);
+                        _clients[id].ActivateConduit();
+                        return;
+                    }
+                    else
+                    {
+                        
+                    }
+                }
+                catch
+                {
+                    // ignored
+                }
+                try
+                {
+                    await connection.CloseAsync();
+                }
+                catch
+                {
+                    // ignored
+                }
+                return;
+            }
             $"Client connection received with id {connection.ConnectionId}".Log(LogLevel.Debug);
             // Perform handshake
-            var req = await ServerHandshake.SecurityHandshake(connection, new BinaryAdapter(connection), _config);
+            var (req, key) = await ServerHandshake.SecurityHandshake(connection, adp, _config);
             // Check if the client should be allowed
             if (req == null)
             {
@@ -82,7 +118,7 @@ namespace horizon.Server
                 return;
             }
             // Create a new conduit
-            var cd = new Conduit(connection);
+            var cd = new Conduit(connection, key);
             cd.OnDisconnect += ConduitOnDisconnect;
             // Check the connection type
             if (req.CType == ClientConnectRequest.ConnectType.Proxy)
@@ -91,7 +127,7 @@ namespace horizon.Server
                 $"Proxy Client Connected. Proxying to {req.ProxyAddress}:{req.ProxyPort}".Log(LogLevel.Information);
                 var v = new HorizonOutput(new IPEndPoint((await Dns.GetHostAddressesAsync(req.ProxyAddress))[0], req.ProxyPort), cd);
                 v.Initialize();
-                cd.ActivateConduit();
+                _clients[connection.ConnectionId] = cd;
             }
             else if(req.CType == ClientConnectRequest.ConnectType.ReverseProxy)
             {
@@ -99,7 +135,7 @@ namespace horizon.Server
                 $"Reverse Proxy Client Connected. Bound on {req.ListenPort}".Log(LogLevel.Information);
                 var v = new HorizonInput(new IPEndPoint(IPAddress.Any, req.ListenPort), cd);
                 v.Initialize();
-                cd.ActivateConduit();
+                _clients[connection.ConnectionId] = cd;
             }
             else
             {
@@ -123,6 +159,7 @@ namespace horizon.Server
         /// <param name="remote"></param>
         private void ConduitOnDisconnect(DisconnectReason reason, Guid connectionId, string message, bool remote)
         {
+            while (_clients.ContainsKey(connectionId)) _clients.TryRemove(connectionId, out _);
             if (remote)
             {
                 if (reason == DisconnectReason.Textual)

@@ -1,6 +1,7 @@
 ﻿using System;
 using System.Buffers;
 using System.Collections.Generic;
+using System.Diagnostics;
 using System.IO;
 using System.Net.Sockets;
 using System.Text;
@@ -41,6 +42,7 @@ namespace horizon.Transport
             _bufferSize = buffer.Length;
             Connected = false;
             Remote = remote;
+            Remote.NoDelay = true;
             _hConduit = conduit;
             _hConduit.OnDisconnect += HConduitOnOnDisconnect;
         }
@@ -56,33 +58,31 @@ namespace horizon.Transport
         {
             $"Fiber {Id} in connection id {_hConduit._wsConn.ConnectionId} has started accepting data".Log(LogLevel.Trace);
             Connected = true;
-            Remote.BeginReceive(_buffer, 0, _bufferSize, SocketFlags.None, ReadCallback, Remote);
+            Task.Run(Reader);
         }
 
-        public void ReadCallback(IAsyncResult ar)
+        public async Task Reader()
         {
             try
             {
-                var sock = (Socket) ar.AsyncState;
-                if (sock == null || !sock.Connected)
+                while (Connected)
                 {
-                    _hConduit.RemoveFiber(Id).GetAwaiter().GetResult();
-                    return;
+                    var len = await Remote.ReceiveAsync(_buffer, SocketFlags.None);
+                    if (len == 0)
+                    {
+                        $"REEEEEEEEEEEE".Log(LogLevel.Trace);
+                        break;
+                    }
+                    await _hConduit.ForwardData(Id, new ArraySegment<byte>(_buffer, 0, len));
                 }
-                int bytesRead = sock.EndReceive(ar);
-                if (!sock.Connected || bytesRead == 0)
-                {
-                    _hConduit.RemoveFiber(Id).GetAwaiter().GetResult();
-                    return;
-                }
-                _hConduit.ForwardData(Id, new ArraySegment<byte>(_buffer, 0, bytesRead)).GetAwaiter().GetResult();
-                sock.BeginReceive(_buffer, 0, _bufferSize, SocketFlags.None, ReadCallback, sock);
             }
             catch(Exception e)
             {
-                $"Exception occurred while reading from fiber: {e.Message} {e.StackTrace}".Log(LogLevel.Trace);
-                _hConduit.RemoveFiber(Id).GetAwaiter().GetResult();
+                $"Exception occurred while reading from fiber {Id}: {e.Message} {e.StackTrace}".Log(LogLevel.Trace);
             }
+            
+            await _hConduit.RemoveFiber(Id);
+            Remote.Dispose();
         }
         public bool Send(ArraySegment<byte> data)
         {

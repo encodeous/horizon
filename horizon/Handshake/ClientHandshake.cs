@@ -26,7 +26,7 @@ namespace horizon.Handshake
         /// <param name="adp"></param>
         /// <param name="cfg"></param>
         /// <returns>returns false to disconnect</returns>
-        internal static async ValueTask<bool> SecurityHandshake(WsStream stream, BinaryAdapter adp, HorizonClientConfig cfg)
+        internal static async ValueTask<(bool, byte[])> SecurityHandshake(WsStream stream, BinaryAdapter adp, HorizonClientConfig cfg)
         {
             try
             {
@@ -42,20 +42,20 @@ namespace horizon.Handshake
                 await adp.WriteByteArray(cTokenHash);
                 if (await adp.ReadInt() != 1)
                 {
-                    return false;
+                    return (false, null);
                 }
                 // Verify the server's token
                 var serverHash = await adp.ReadByteArray();
-                // Check if the received token is valiawait adp.WriteInt(0);d (Ensures server authenticity)
+                // Check if the received token is valid (Ensures server authenticity)
                 if (!serverHash.SequenceEqual(Handshake.GetHCombined(sentBytes, cfg.Token)))
                 {
                     // Signal Failure
                     await adp.WriteInt(0);
-                    return false;
+                    return (false, null);
                 }
                 await adp.WriteInt(1);
-
-                await stream.EncryptAesAsync(Handshake.GetHCombined2(sentBytes, remoteBytes, cfg.Token));
+                var encKey = Handshake.GetHCombined2(sentBytes, remoteBytes, cfg.Token);
+                await stream.EncryptAesAsync(encKey);
                 // SECURITY HEADER DONE
 
                 var req = new ClientConnectRequest();
@@ -94,16 +94,16 @@ namespace horizon.Handshake
                     {
                         $"Server refused connection with message: {serverResponse.DisconnectMessage}".Log(LogLevel.Warning);
                     }
-                    return false;
+                    return (false, null);
                 }
-                return true;
+                return (true, encKey);
             }
             catch(Exception e)
             {
                 $"Exception occurred on Client Handshake: {e.Message} {e.StackTrace}".Log(LogLevel.Debug);
             }
 
-            return false;
+            return (false, null);
         }
     }
 }

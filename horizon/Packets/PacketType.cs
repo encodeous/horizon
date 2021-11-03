@@ -26,14 +26,6 @@ namespace horizon.Packets
         /// </summary>
         FiberNotAdded,
         /// <summary>
-        /// A signal for the other party to remove a fiber
-        /// </summary>
-        RemoveFiber,
-        /// <summary>
-        /// A packet containing data
-        /// </summary>
-        DataPacket,
-        /// <summary>
         /// Disconnection Packet
         /// </summary>
         DisconnectPacket
