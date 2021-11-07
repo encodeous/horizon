@@ -19,5 +19,6 @@ namespace horizon_cli
             var v = JsonSerializer.Serialize(config, opt);
             File.WriteAllText(path, v);
         }
+        
     }
 }

@@ -64,8 +64,8 @@ namespace horizon.Client
                     v.Initialize();
                 }
 
+                // create a data stream client
                 _dataClient = new WsClient();
-
                 var dataConn = await _dataClient.ConnectAsync(_config.Server);
                 var adpd = new BinaryAdapter(dataConn);
                 await adpd.WriteInt(1);
@@ -151,5 +151,6 @@ namespace horizon.Client
                 $"{e.Message} {e.StackTrace}".Log(LogLevel.Debug);
             }
         }
+        
     }
 }

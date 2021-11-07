@@ -44,7 +44,7 @@ namespace horizon.Transport
             {
                 var sock = new Socket(SocketType.Stream, ProtocolType.Tcp);
                 sock.Connect(_hEndpoint);
-                return new Fiber(sock, _hConduit.Adapter._arrayPool.Rent(_minBufferSize), _hConduit);
+                return new Fiber(sock, _minBufferSize, _hConduit);
             }
             catch(Exception e)
             {

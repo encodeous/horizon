@@ -26,6 +26,10 @@ namespace horizon.Packets
         /// </summary>
         FiberNotAdded,
         /// <summary>
+        /// A signal from a node that a fiber is no longer accepting data
+        /// </summary>
+        FiberNotAccepting,
+        /// <summary>
         /// Disconnection Packet
         /// </summary>
         DisconnectPacket

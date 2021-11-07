@@ -64,8 +64,8 @@ namespace horizon.Transport
                 {
                     // Listen for clients and add a client fiber when a client connects
                     var sock = await _hSocket.AcceptAsync();
-                    var fiber = new Fiber(sock, _hConduit.Adapter._arrayPool.Rent(_minBufferSize), _hConduit);
-                    await _hConduit.AddFiber(fiber);
+                    var fiber = new Fiber(sock, _minBufferSize, _hConduit);
+                    _hConduit.CreateFiber(fiber);
                 }
                 catch (Exception e)
                 {
