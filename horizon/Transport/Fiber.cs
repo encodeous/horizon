@@ -4,8 +4,11 @@ using System.Collections.Generic;
 using System.IO;
 using System.Net.Sockets;
 using System.Text;
+using System.Threading;
+using System.Threading.Channels;
 using System.Threading.Tasks;
 using horizon.Packets;
+using horizon.Threading;
 using Microsoft.Extensions.Logging;
 
 namespace horizon.Transport
@@ -13,103 +16,88 @@ namespace horizon.Transport
     /// <summary>
     /// A class that handles a single TCP connection
     /// </summary>
-    public class Fiber
+    public partial class Fiber
     {
-        /// <summary>
-        /// Checks if the Fiber is still connected
-        /// </summary>
+        public const int MaxCachedPackets = 100;
+        public const int BackpressureRelease = 50;
+        public const int BackpressureStopLimit = 95;
         public bool Connected { get; internal set; }
-
         public Socket Remote;
-
+        private NetworkStream _writeStream;
+        internal Channel<ArraySegment<byte>> FiberBuffer;
         public int Id;
-
-        private readonly int _bufferSize;
-
+        readonly int _packetSize;
+        private object _remoteBufferLock = new object();
+        private int _remoteBufferRem;
         public bool IsReceivingData;
-        
+        public bool IsReadingData;
+        private ManualResetEventSlim _releaseBackpressure = new ManualResetEventSlim(true);
         private byte[] _currentBuffer;
-
         private readonly Conduit _hConduit;
+        private readonly bool _highPerf;
+        public bool CrossedStopLimit;
+
         /// <summary>
         /// Create a fiber
         /// </summary>
         /// <param name="remote">The remote/local tcp connection opened</param>
-        /// <param name="bufferSize">The read/write buffer size</param>
+        /// <param name="packetSize">The read/write buffer size</param>
         /// <param name="conduit">Where the data should be mirrored to</param>
-        public Fiber(Socket remote, int bufferSize, Conduit conduit)
+        public Fiber(Socket remote, int packetSize, Conduit conduit)
         {
-            _bufferSize = bufferSize;
+            _highPerf = conduit.HighPerf;
+            _packetSize = packetSize;
             Connected = false;
             Remote = remote;
             _hConduit = conduit;
             _hConduit.OnDisconnect += HConduitOnOnDisconnect;
+            // Max {MaxCachedPackets} packets can be buffered before backpressure is applied
+            if(!_highPerf) FiberBuffer = Channel.CreateBounded<ArraySegment<byte>>(MaxCachedPackets);
         }
 
-        private void HConduitOnOnDisconnect(DisconnectReason reason, Guid connectionId, string message, bool remote)
-        {
-            Disconnect();
-        }
         /// <summary>
-        /// Uses async sockets to ensure low and efficient cpu usage
+        /// Update backpressure
         /// </summary>
+        public void BackpressureUpdate(int pressure)
+        {
+            if (_highPerf) return;
+            if (pressure >= BackpressureStopLimit)
+            {
+                CrossedStopLimit = true;
+            }
+            else if(pressure <= BackpressureRelease && CrossedStopLimit && !IsReadingData)
+            {
+                IsReadingData = true;
+                ResumeReceive();
+            }
+            lock (_remoteBufferLock)
+            {
+                _remoteBufferRem = pressure;
+            }
+        }
+        
+        /// <summary>
+        /// Restarts receiving data from the tcp remote
+        /// </summary>
+        private void ResumeReceive()
+        {
+            _releaseBackpressure.Set();
+        }
         public void StartAcceptingData()
         {
             $"Fiber {Id} in connection id {_hConduit._wsConn.ConnectionId} has started accepting data".Log(LogLevel.Trace);
             Connected = true;
+            IsReadingData = true;
             IsReceivingData = true;
-            _currentBuffer = _hConduit.Adapter._arrayPool.Rent(_bufferSize);
-            Remote.BeginReceive(_currentBuffer, 0, _bufferSize, SocketFlags.None, ReadCallback, Remote);
+            _currentBuffer = ArrayPool<byte>.Shared.Rent(_packetSize);
+            _writeStream = new NetworkStream(Remote);
+            ResumeReceive();
+            if(!_highPerf) Task.Factory.StartNew(Sender, TaskCreationOptions.LongRunning);
+            Task.Factory.StartNew(Receiver, TaskCreationOptions.LongRunning);
         }
 
-        public void ReadCallback(IAsyncResult ar)
-        {
-            try
-            {
-                var sock = (Socket) ar.AsyncState;
-                if (sock == null || !sock.Connected)
-                {
-                    _hConduit.RemoveFiber(Id);
-                    return;
-                }
-                int bytesRead = sock.EndReceive(ar);
-                if (!sock.Connected || bytesRead == 0)
-                {
-                    _hConduit.RemoveFiber(Id);
-                    return;
-                }
-                _hConduit.ForwardData(Id, new ArraySegment<byte>(_currentBuffer, 0, bytesRead)).GetAwaiter().GetResult();
-                _currentBuffer = _hConduit.Adapter._arrayPool.Rent(_bufferSize);
-                sock.BeginReceive(_currentBuffer, 0, _bufferSize, SocketFlags.None, ReadCallback, sock);
-            }
-            catch(Exception e)
-            {
-                $"Exception occurred while reading from fiber: {e.Message} {e.StackTrace}".Log(LogLevel.Trace);
-                _hConduit.RemoveFiber(Id);
-            }
-        }
-        public bool Send(ArraySegment<byte> data)
-        {
-            try
-            {
-                if (!Remote.Connected) return false;
-                int total = data.Count;
-                int sent = 0;
-                while (sent < total)
-                {
-                    int len = Remote.Send(data[sent..]);
-                    sent += len;
-                }
-            }
-            catch(Exception e)
-            {
-                $"Exception occurred while writing to fiber: {e.Message} {e.StackTrace}".Log(LogLevel.Trace);
-                _hConduit.RemoveFiber(Id);
-                return false;
-            }
-            return true;
-        }
-
+        
+        private void HConduitOnOnDisconnect(DisconnectReason reason, Guid connectionId, string message, bool remote) => Disconnect();
         /// <summary>
         /// Disconnect the fiber
         /// </summary>
@@ -119,16 +107,17 @@ namespace horizon.Transport
             {
                 try
                 {
+                    Connected = false;
                     $"Fiber {Id} in connection id {_hConduit._wsConn.ConnectionId} has disconnected from the remote".Log(LogLevel.Trace);
                     Remote.Close();
                     Remote.Dispose();
+                    FiberBuffer.Writer.Complete();
                 }
                 catch(Exception e)
                 {
                     $"{e.Message} {e.StackTrace}".Log(LogLevel.Debug);
                 }
             }
-            Connected = false;
         }
     }
 }

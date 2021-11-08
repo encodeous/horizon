@@ -18,8 +18,6 @@ namespace horizon.Transport
     {
         private WsStream _connection;
 
-        internal readonly ArrayPool<byte> _arrayPool;
-
         // Synchronization
 
         internal SemaphoreSlim _readSlim = new SemaphoreSlim(1, 1);
@@ -28,7 +26,6 @@ namespace horizon.Transport
         public BinaryAdapter(WsStream connection)
         {
             _connection = connection;
-            _arrayPool = ArrayPool<byte>.Create();
         }
 
         /// <summary>
@@ -70,20 +67,19 @@ namespace horizon.Transport
                 _readSlim.Release();
             }
         }
-    
 
         private async ValueTask<byte[]> IReadBytes(int bytes, bool l = true)
         {
             if (!l)
             {
-                var buf = _arrayPool.Rent(bytes);
+                var buf = ArrayPool<byte>.Shared.Rent(bytes);
                 await FillBytes(new ArraySegment<byte>(buf, 0, bytes), false);
                 return buf;
             }
             try
             {
                 await _readSlim.WaitAsync();
-                var buf = _arrayPool.Rent(bytes);
+                var buf = ArrayPool<byte>.Shared.Rent(bytes);
                 await FillBytes(new ArraySegment<byte>(buf, 0, bytes), false);
                 return buf;
             }
@@ -117,6 +113,8 @@ namespace horizon.Transport
                 _readSlim.Release();
             }
         }
+
+        private byte[] ti_buffer = new byte[4];
         /// <summary>
         /// Read the next 4 bytes as an integer
         /// </summary>
@@ -125,18 +123,15 @@ namespace horizon.Transport
         {
             if (!l)
             {
-                var val = await IReadBytes(4, false);
-                int k = BitConverter.ToInt32(val);
-                _arrayPool.Return(val);
+                await FillBytes(ti_buffer, false);
+                int k = BitConverter.ToInt32(ti_buffer);
                 return k;
             }
-
             try
             {
                 await _readSlim.WaitAsync();
-                var val = await IReadBytes(4, false);
-                int k = BitConverter.ToInt32(val);
-                _arrayPool.Return(val);
+                await FillBytes(ti_buffer, false);
+                int k = BitConverter.ToInt32(ti_buffer);
                 return k;
             }
             finally
@@ -194,7 +189,7 @@ namespace horizon.Transport
         /// <param name="arr"></param>
         public void ReturnByte(byte[] arr)
         {
-            _arrayPool.Return(arr);
+            ArrayPool<byte>.Shared.Return(arr);
         }
         /// <summary>
         /// Read the next 8 bytes as a long
@@ -206,7 +201,7 @@ namespace horizon.Transport
             {
                 var val = await IReadBytes(8, false);
                 long k = BitConverter.ToInt64(val);
-                _arrayPool.Return(val);
+                ArrayPool<byte>.Shared.Return(val);
                 return k;
             }
             try
@@ -214,7 +209,7 @@ namespace horizon.Transport
                 await _readSlim.WaitAsync();
                 var val = await IReadBytes(8, false);
                 long k = BitConverter.ToInt64(val);
-                _arrayPool.Return(val);
+                ArrayPool<byte>.Shared.Return(val);
                 return k;
             }
             finally
@@ -243,6 +238,7 @@ namespace horizon.Transport
                 _writeSlim.Release();
             }
         }
+        byte[] wi_buffer = new byte[4];
         /// <summary>
         /// Write a int to the stream
         /// </summary>
@@ -251,35 +247,31 @@ namespace horizon.Transport
         {
             if (!l)
             {
-                var buf = _arrayPool.Rent(4);
                 if (BitConverter.IsLittleEndian)
                 {
-                    BinaryPrimitives.WriteInt32LittleEndian(buf, val);
+                    BinaryPrimitives.WriteInt32LittleEndian(wi_buffer, val);
                 }
                 else
                 {
-                    BinaryPrimitives.WriteInt32BigEndian(buf, val);
+                    BinaryPrimitives.WriteInt32BigEndian(wi_buffer, val);
                 }
 
-                await _connection.WriteAsync(new ArraySegment<byte>(buf, 0, 4));
-                _arrayPool.Return(buf);
+                await _connection.WriteAsync(wi_buffer);
                 return;
             }
             try
             {
                 await _writeSlim.WaitAsync();
-                var buf = _arrayPool.Rent(4);
                 if (BitConverter.IsLittleEndian)
                 {
-                    BinaryPrimitives.WriteInt32LittleEndian(buf, val);
+                    BinaryPrimitives.WriteInt32LittleEndian(wi_buffer, val);
                 }
                 else
                 {
-                    BinaryPrimitives.WriteInt32BigEndian(buf, val);
+                    BinaryPrimitives.WriteInt32BigEndian(wi_buffer, val);
                 }
 
-                await _connection.WriteAsync(new ArraySegment<byte>(buf, 0, 4));
-                _arrayPool.Return(buf);
+                await _connection.WriteAsync(wi_buffer);
             }
             finally
             {
@@ -317,7 +309,7 @@ namespace horizon.Transport
         {
             if (!l)
             {
-                var buf = _arrayPool.Rent(8);
+                var buf = ArrayPool<byte>.Shared.Rent(8);
                 if (BitConverter.IsLittleEndian)
                 {
                     BinaryPrimitives.WriteInt64LittleEndian(buf, val);
@@ -327,13 +319,13 @@ namespace horizon.Transport
                     BinaryPrimitives.WriteInt64BigEndian(buf, val);
                 }
                 await _connection.WriteAsync(new ArraySegment<byte>(buf, 0, 8));
-                _arrayPool.Return(buf);
+                ArrayPool<byte>.Shared.Return(buf);
                 return;
             }
             try
             {
                 await _writeSlim.WaitAsync();
-                var buf = _arrayPool.Rent(8);
+                var buf = ArrayPool<byte>.Shared.Rent(8);
                 if (BitConverter.IsLittleEndian)
                 {
                     BinaryPrimitives.WriteInt64LittleEndian(buf, val);
@@ -343,7 +335,7 @@ namespace horizon.Transport
                     BinaryPrimitives.WriteInt64BigEndian(buf, val);
                 }
                 await _connection.WriteAsync(new ArraySegment<byte>(buf, 0, 8));
-                _arrayPool.Return(buf);
+                ArrayPool<byte>.Shared.Return(buf);
             }
             finally
             {

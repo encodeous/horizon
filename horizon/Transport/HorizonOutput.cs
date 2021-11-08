@@ -25,7 +25,7 @@ namespace horizon.Transport
         /// <param name="endPoint"></param>
         /// <param name="link"></param>
         /// <param name="minBuffer"></param>
-        public HorizonOutput(EndPoint endPoint, Conduit link, int minBuffer = 1 << 18)
+        public HorizonOutput(EndPoint endPoint, Conduit link, int minBuffer = 1 << 15)
         {
             _hEndpoint = endPoint;
             _minBufferSize = minBuffer;

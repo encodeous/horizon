@@ -10,13 +10,17 @@ namespace horizon.Client
     public class HorizonClientConfig
     {
         /// <summary>
-        /// Client token
+        /// Client token, used for encryption
         /// </summary>
         public string Token { get; set; }
         /// <summary>
         /// Horizon Server address
         /// </summary>
         public Uri Server { get; set; }
+        /// <summary>
+        /// Set to true to disable stability features such as backpressure
+        /// </summary>
+        public bool HighPerformance { get; set; }
         /// <summary>
         /// Proxy configuration, either use <see cref="HorizonProxyConfig"/> or <see cref="HorizonReverseProxyConfig"/>
         /// </summary>

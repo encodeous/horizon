@@ -38,6 +38,7 @@ namespace horizon.Client
         /// <returns>Returns true if the client was successfully connected</returns>
         public async Task<bool> Start()
         {
+            if(_config.HighPerformance) $"Horizon is running in High Performance mode, encryption and other mechanisms are disabled!".Log(LogLevel.Critical);
             $"Connecting to {_config.Server}".Log(LogLevel.Information);
             // Start a WStream client
             _signalClient = new WsClient();
@@ -49,7 +50,7 @@ namespace horizon.Client
             var (success, key) = await ClientHandshake.SecurityHandshake(_conn, adpc, _config);
             if (success)
             {
-                _conduit = new Conduit(_conn, key);
+                _conduit = new Conduit(_conn, key, _config.HighPerformance);
                 _conduit.OnDisconnect += ConduitOnDisconnect;
                 if (_config.ProxyConfig is HorizonReverseProxyConfig rproxcfg)
                 {

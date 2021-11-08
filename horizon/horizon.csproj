@@ -13,8 +13,8 @@
 		<PackageId>Encodeous.horizon</PackageId>
 	</PropertyGroup>
 	<ItemGroup>
-		<PackageReference Include="wstream" Version="2.1.2" />
-		<PackageReference Include="wstream.Crypto" Version="2.1.1" />
+		<PackageReference Include="wstream" Version="2.1.3" />
+		<PackageReference Include="wstream.Crypto" Version="2.1.3" />
 	</ItemGroup>
 
 </Project>

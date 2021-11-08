@@ -118,7 +118,7 @@ namespace horizon.Server
                 return;
             }
             // Create a new conduit
-            var cd = new Conduit(connection, key);
+            var cd = new Conduit(connection, key, req.RequestHighPerf);
             cd.OnDisconnect += ConduitOnDisconnect;
             // Check the connection type
             if (req.CType == ClientConnectRequest.ConnectType.Proxy)

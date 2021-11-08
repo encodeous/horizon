@@ -23,7 +23,7 @@ namespace horizon.Server
         /// A set of Hosts that a client is allowed/denied from connecting to
         /// </summary>
         public RemotePattern[] RemotesPattern { get; set; } =
-            { new RemotePattern() { HostRegex = "[\\s\\S]", PortRangeStart = 0, PortRangeEnd = 65353 } };
+            { new RemotePattern() { HostRegex = "[\\s\\S]", PortRangeStart = 1, PortRangeEnd = 65535 } };
 
         /// <summary>
         /// A set of ports that a client is allowed/denied from binding to as their reverse proxy.

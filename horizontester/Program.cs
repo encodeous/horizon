@@ -21,7 +21,8 @@ var client = new HorizonClient(new HorizonClientConfig()
         RemoteEndpointPort = 54900,
         LocalPort = 8080
     },
-    Server = new Uri("ws://localhost:22001")
+    Server = new Uri("ws://localhost:22001"),
+    HighPerformance = true
 });
 var x = await client.Start();
 Console.ReadLine();

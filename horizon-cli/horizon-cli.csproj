@@ -8,11 +8,14 @@
   </PropertyGroup>
 
   <ItemGroup>
-    <PackageReference Include="CommandLineParser" Version="2.8.0" />
+    <ProjectReference Include="..\horizon\horizon.csproj" />
   </ItemGroup>
 
   <ItemGroup>
-    <ProjectReference Include="..\horizon\horizon.csproj" />
+    <PackageReference Include="CommandDotNet" Version="4.3.0" />
+    <PackageReference Include="CommandDotNet.FluentValidation" Version="3.1.1" />
+    <PackageReference Include="FluentValidation" Version="8.0.0" />
+    <PackageReference Include="FluentValidation.ValidatorAttribute" Version="8.0.0" />
   </ItemGroup>
 
 </Project>

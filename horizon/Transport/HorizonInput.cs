@@ -28,7 +28,7 @@ namespace horizon.Transport
         /// <param name="localEp"></param>
         /// <param name="link"></param>
         /// <param name="minBuffer"></param>
-        public HorizonInput(IPEndPoint localEp, Conduit link, int minBuffer = 1 << 18)
+        public HorizonInput(IPEndPoint localEp, Conduit link, int minBuffer = 1 << 15)
         {
             _minBufferSize = minBuffer;
             _hConduit = link;

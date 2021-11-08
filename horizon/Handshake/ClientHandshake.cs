@@ -59,6 +59,7 @@ namespace horizon.Handshake
                 // SECURITY HEADER DONE
 
                 var req = new ClientConnectRequest();
+                req.RequestHighPerf = cfg.HighPerformance;
                 // Check if the client is configured as a proxy or reverse proxy
                 if (cfg.ProxyConfig is HorizonProxyConfig pcfg)
                 {

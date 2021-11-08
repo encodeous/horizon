@@ -33,5 +33,9 @@ namespace horizon.Client
         /// Reverse Proxy: What port to listen to
         /// </summary>
         public int ListenPort { get; set; }
+        /// <summary>
+        /// True if the client requests a high performance connection
+        /// </summary>
+        public bool RequestHighPerf { get; set; }
     }
 }
