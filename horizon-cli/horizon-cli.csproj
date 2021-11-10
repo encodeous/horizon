@@ -16,6 +16,7 @@
     <PackageReference Include="CommandDotNet.FluentValidation" Version="3.1.1" />
     <PackageReference Include="FluentValidation" Version="8.0.0" />
     <PackageReference Include="FluentValidation.ValidatorAttribute" Version="8.0.0" />
+    <PackageReference Include="Ubiety.Dns.Core" Version="4.2.2" />
   </ItemGroup>
 
 </Project>

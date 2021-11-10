@@ -18,27 +18,7 @@ namespace horizon_cli.Models
         public ReverseProxyModelValidator()
         {
             RuleFor(x => x).SetValidator(new ClientModelValidator());
-            RuleFor(x => x.Portmap).NotEmpty().Custom(PortmapIsValid);
-        }
-        private void PortmapIsValid(string portmap, CustomContext ctx)
-        {
-            var portmapParts = portmap.Split(':');
-            if (portmapParts.Length != 2)
-            {
-                ctx.AddFailure("The specified port map is not valid, the map follows this format: [local-port]:[reverse-proxy-port]");
-                return;
-            }
-
-            if (!int.TryParse(portmapParts[0], out var v) || v is <= 0 or > 65536)
-            {
-                ctx.AddFailure($"The specified port \"{portmapParts[0]}\" in the map is not valid, the map follows this format: [local-port]:[reverse-proxy-port]");
-                return;
-            }
-
-            if (!int.TryParse(portmapParts[1], out var x) || x is <= 0 or > 65536)
-            {
-                ctx.AddFailure($"The specified port \"{portmapParts[1]}\" in the map is not valid, the map follows this format: [local-port]:[reverse-proxy-port]");
-            }
+            RuleFor(x => x.Portmap).NotEmpty().Custom(ProxyModelValidator.PortmapIsValid);
         }
     }
 }

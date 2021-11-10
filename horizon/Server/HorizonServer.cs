@@ -12,6 +12,8 @@ using horizon.Handshake;
 using horizon.Packets;
 using horizon.Transport;
 using Microsoft.Extensions.Logging;
+using Ubiety.Dns.Core;
+using Ubiety.Dns.Core.Common;
 using wstream;
 
 namespace horizon.Server
@@ -24,6 +26,8 @@ namespace horizon.Server
         private HorizonServerConfig _config;
         private WsServer _wsServer;
         private ConcurrentDictionary<Guid, Conduit> _clients;
+        private Resolver _resolver;
+        public static string DnsServer = "1.1.1.1";
 
         /// <summary>
         /// Configure the server
@@ -32,6 +36,13 @@ namespace horizon.Server
         public HorizonServer(HorizonServerConfig config)
         {
             _config = config;
+            _resolver = ResolverBuilder.Begin()
+                .AddDnsServer(DnsServer)
+                .EnableCache()
+                .SetRetries(3)
+                .SetTimeout(1000)
+                .UseRecursion()
+                .Build();
             _wsServer = new WsServer();
             _clients = new ConcurrentDictionary<Guid, Conduit>();
         }
@@ -125,6 +136,7 @@ namespace horizon.Server
             {
                 // Open a proxy output pipe
                 $"Proxy Client Connected. Proxying to {req.ProxyAddress}:{req.ProxyPort}".Log(LogLevel.Information);
+                _resolver.Query(req.ProxyAddress, QuestionType.ANY).
                 var v = new HorizonOutput(new IPEndPoint((await Dns.GetHostAddressesAsync(req.ProxyAddress))[0], req.ProxyPort), cd);
                 v.Initialize();
                 _clients[connection.ConnectionId] = cd;

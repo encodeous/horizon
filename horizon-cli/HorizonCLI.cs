@@ -18,8 +18,13 @@ namespace horizon_cli
             [Command(Description = "Proxy connections through the server", Name = "proxy")]
             public async Task ProxyAsync(ProxyModel model, CancellationToken ct)
             {
-                HorizonProxyConfig hpc = new HorizonProxyConfig();
-                ParseProxyMap(model.Portmap, hpc);
+                var (p1, addr, p2) = ParseProxyMap(model.Portmap);
+                HorizonProxyConfig hpc = new HorizonProxyConfig()
+                {
+                    LocalPort = p1,
+                    RemoteEndpoint = addr,
+                    RemoteEndpointPort = p2
+                };
                 HorizonClient hc = new HorizonClient(new HorizonClientConfig()
                 {
                     HighPerformance = model.HighPerformance,
@@ -41,7 +46,13 @@ namespace horizon_cli
                 }
             }
             
-            private void ParseProxyMap(string portmap, HorizonProxyConfig cfg)
+            [Command(Description = "Reverse proxy connections from the server to this client", Name = "rproxy")]
+            public void ReverseProxy(ReverseProxyModel model, CancellationToken ct)
+            {
+            
+            }
+            
+            private (int, string, int) ParseProxyMap(string portmap)
             {
                 var portmapParts = portmap.Split(':');
 
@@ -49,42 +60,13 @@ namespace horizon_cli
                 {
                     throw new Exception("Error occurred while parsing proxy map.");
                 }
-
-                cfg.LocalPort = v;
 
                 if (!int.TryParse(portmapParts[2], out var x) || x is <= 0 or > 65536)
                 {
                     throw new Exception("Error occurred while parsing proxy map.");
                 }
-                
-                cfg.RemoteEndpointPort = v;
 
-                cfg.RemoteEndpoint = portmapParts[1];
-            }
-            
-            private void ParseReverseProxyMap(string portmap, HorizonReverseProxyConfig ctx)
-            {
-                var portmapParts = portmap.Split(':');
-
-                if (!int.TryParse(portmapParts[0], out var v) || v is <= 0 or > 65536)
-                {
-                    throw new Exception("Error occurred while parsing proxy map.");
-                }
-
-                ctx.ListenPort = v;
-
-                if (!int.TryParse(portmapParts[1], out var x) || x is <= 0 or > 65536)
-                {
-                    throw new Exception("Error occurred while parsing proxy map.");
-                }
-                
-                ctx.
-            }
-            
-            [Command(Description = "Reverse proxy connections from the server to this client", Name = "rproxy")]
-            public void ReverseProxy(ReverseProxyModel model, CancellationToken ct)
-            {
-            
+                return (v, portmapParts[1], x);
             }
         }
 
