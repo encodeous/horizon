@@ -46,6 +46,7 @@ namespace horizon.Handshake
                 var cTokenHash = await adp.ReadByteArray();
                 if (!cvTokenHash.SequenceEqual(cTokenHash))
                 {
+                    $"An unauthorized client has been rejected.".Log(LogLevel.Debug);
                     // Signal Failure
                     await adp.WriteInt(0);
                     return (null, null);
@@ -57,6 +58,7 @@ namespace horizon.Handshake
                 await adp.WriteByteArray(sTokenHash);
                 if (await adp.ReadInt() != 1)
                 {
+                    $"A client connected has rejected the server's token, a possible man-in-the middle attack may be occurring.".Log(LogLevel.Warning);
                     return (null, null);
                 }
 
@@ -98,6 +100,15 @@ namespace horizon.Handshake
                     response.Accepted = false;
                     response.DisconnectMessage =
                         "The specified port is already bound!";
+                    await adp.WriteByteArray(JsonSerializer.SerializeToUtf8Bytes(response));
+                    return (null, null);
+                }
+                // If the request is a proxy request, make sure the destination is available
+                if (clientRequest.CType == ClientConnectRequest.ConnectType.Proxy &&
+                    await Utils.ResolveDns(clientRequest.ProxyAddress) is null)
+                {
+                    response.Accepted = false;
+                    response.DisconnectMessage = "The Dns resolver cannot resolve the request proxy address. Make sure the address is reachable";
                     await adp.WriteByteArray(JsonSerializer.SerializeToUtf8Bytes(response));
                     return (null, null);
                 }

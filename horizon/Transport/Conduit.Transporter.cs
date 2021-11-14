@@ -93,7 +93,7 @@ namespace horizon.Transport
         /// </summary>
         private async Task Router()
         {
-            while (Connected)
+            while (Connected && _wsConn.Connected)
             {
                 try
                 {
@@ -139,6 +139,7 @@ namespace horizon.Transport
                         var reason = (DisconnectReason) await Adapter.ReadInt(false);
                         // Handle disconnection
                         RemoteDisconnect(reason);
+                        break;
                     }
                     else
                     {
@@ -147,9 +148,12 @@ namespace horizon.Transport
                 }
                 catch (Exception e)
                 {
-                    $"Error occurred in Router: {e.Message} {e.StackTrace}".Log(LogLevel.Trace);
+                    await Disconnect(DisconnectReason.Terminated);
+                    $"Error occurred in Router: {e.Message} {e.StackTrace}".Log(LogLevel.Debug);
                 }
             }
+
+            Connected = false;
         }
 
         internal async ValueTask ForwardData(int id, ArraySegment<byte> data)

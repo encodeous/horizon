@@ -54,25 +54,34 @@ namespace horizon.Client
                 _conduit.OnDisconnect += ConduitOnDisconnect;
                 if (_config.ProxyConfig is HorizonReverseProxyConfig rproxcfg)
                 {
-                    $"Started Reverse Proxy!".Log(LogLevel.Information);
                     var v = new HorizonOutput(rproxcfg.LocalEndPoint, _conduit);
                     v.Initialize();
                 }
                 else if (_config.ProxyConfig is HorizonProxyConfig proxcfg)
                 {
-                    $"Started Proxy!".Log(LogLevel.Information);
                     var v = new HorizonInput(new IPEndPoint(IPAddress.Any, proxcfg.LocalPort), _conduit);
                     v.Initialize();
                 }
-
+                $"Creating data stream".Log(LogLevel.Trace);
                 // create a data stream client
                 _dataClient = new WsClient();
                 var dataConn = await _dataClient.ConnectAsync(_config.Server);
                 var adpd = new BinaryAdapter(dataConn);
                 await adpd.WriteInt(1);
                 await adpd.WriteByteArray(_conn.ConnectionId.ToByteArray());
+                await dataConn.FlushAsync();
+                $"Activating data stream".Log(LogLevel.Trace);
                 await _conduit.InitializeDataStreamAsync(dataConn);
+                $"Activating conduit".Log(LogLevel.Trace);
                 _conduit.ActivateConduit();
+                if(_config.ProxyConfig is HorizonReverseProxyConfig rproxcfg2)
+                {
+                    $"Connected to Reverse Proxy, mapping {rproxcfg2.ListenPort} from the server to {rproxcfg2.LocalEndPoint}.".Log(LogLevel.Information);
+                }
+                else if(_config.ProxyConfig is HorizonProxyConfig proxcfg2)
+                {
+                    $"Connected to Proxy, tunneling local port {proxcfg2.LocalPort} to {proxcfg2.RemoteEndpoint}:{proxcfg2.RemoteEndpointPort}.".Log(LogLevel.Information);
+                }
                 return true;
             }
             $"Handshake Failed".Log(LogLevel.Debug);
@@ -100,22 +109,22 @@ namespace horizon.Client
             {
                 if (reason == DisconnectReason.Textual)
                 {
-                    $"The conduit id {connectionId} disconnected with message: {message}".Log(LogLevel.Warning);
+                    $"The server has closed the connection with the message: {message}".Log(LogLevel.Warning);
                 }
                 else
                 {
-                    $"The remote party has disconnected conduit id {connectionId}, with reason: {reason}".Log(LogLevel.Trace);
+                    $"The server has closed the connection with the reason: {reason}".Log(LogLevel.Information);
                 }
             }
             else
             {
                 if (reason == DisconnectReason.Textual)
                 {
-                    $"Disconnected from conduit id {connectionId}: {message}".Log(LogLevel.Warning);
+                    $"Disconnected from the server with the message: {message}".Log(LogLevel.Warning);
                 }
                 else
                 {
-                    $"Disconnected from conduit id {connectionId}, with reason: {reason}".Log(LogLevel.Trace);
+                    $"Disconnected from the server with the reason: {reason}".Log(LogLevel.Debug);
                 }
             }
             try

@@ -4,6 +4,7 @@ using CommandDotNet;
 using FluentValidation;
 using FluentValidation.Attributes;
 using horizon;
+using Microsoft.Extensions.Logging;
 
 namespace horizon_cli.Models
 {
@@ -19,6 +20,14 @@ namespace horizon_cli.Models
         [Option(LongName = "high-performance", ShortName = "p",
             Description = "Disables encryption and the head-of-line blocking algorithm")]
         public bool HighPerformance  { get; set; } = false;
+        
+        [Option(LongName = "log-level", ShortName = "l",
+            Description = "Configures the logging level.")]
+        public LogLevel LoggingLevel { get; set; } = LogLevel.Information;
+        
+        [Option(LongName = "Use Https transport", ShortName = "s",
+            Description = "Allows the client to connect to a Horizon server behind a ssl server or proxy.")]
+        public bool SecureWebsockets  { get; set; } = false;
     }
     public class ClientModelValidator : AbstractValidator<ClientModel>
     {

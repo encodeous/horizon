@@ -1,6 +1,7 @@
 ﻿using System;
 using System.Collections.Concurrent;
 using System.Collections.Generic;
+using System.Linq;
 using System.Net;
 using System.Security.Cryptography;
 using System.Security.Cryptography.X509Certificates;
@@ -12,8 +13,6 @@ using horizon.Handshake;
 using horizon.Packets;
 using horizon.Transport;
 using Microsoft.Extensions.Logging;
-using Ubiety.Dns.Core;
-using Ubiety.Dns.Core.Common;
 using wstream;
 
 namespace horizon.Server
@@ -26,8 +25,9 @@ namespace horizon.Server
         private HorizonServerConfig _config;
         private WsServer _wsServer;
         private ConcurrentDictionary<Guid, Conduit> _clients;
-        private Resolver _resolver;
-        public static string DnsServer = "1.1.1.1";
+
+        public delegate void ServerStoppedDelegate();
+        public event ServerStoppedDelegate OnServerStopped;
 
         /// <summary>
         /// Configure the server
@@ -36,13 +36,6 @@ namespace horizon.Server
         public HorizonServer(HorizonServerConfig config)
         {
             _config = config;
-            _resolver = ResolverBuilder.Begin()
-                .AddDnsServer(DnsServer)
-                .EnableCache()
-                .SetRetries(3)
-                .SetTimeout(1000)
-                .UseRecursion()
-                .Build();
             _wsServer = new WsServer();
             _clients = new ConcurrentDictionary<Guid, Conduit>();
         }
@@ -61,19 +54,21 @@ namespace horizon.Server
                 }
                 catch (Exception e)
                 {
-                    await _wsServer.StopAsync();
+                    await StopAsync();
                     $"{e.Message} {e.StackTrace}".Log(LogLevel.Error);
                 }
             });
-            $"Server Started and is bound to ws://{_config.Bind}".Log(LogLevel.Information);
+            $"Server Started and is bound to {_config.Bind}".Log(LogLevel.Information);
         }
         /// <summary>
         /// Shut down the Server, and disconnect all the clients
         /// </summary>
-        public void Stop()
+        public async Task StopAsync()
         {
             $"Shutting Down Server...".Log(LogLevel.Information);
-            _wsServer.StopAsync().GetAwaiter().GetResult();
+            await Task.WhenAll(_clients.Values.Select(x => x.Disconnect()));
+            await _wsServer.StopAsync();
+            OnServerStopped?.Invoke();
         }
 
         private async Task AcceptConnectionsAsync(WsStream connection)
@@ -136,8 +131,7 @@ namespace horizon.Server
             {
                 // Open a proxy output pipe
                 $"Proxy Client Connected. Proxying to {req.ProxyAddress}:{req.ProxyPort}".Log(LogLevel.Information);
-                _resolver.Query(req.ProxyAddress, QuestionType.ANY).
-                var v = new HorizonOutput(new IPEndPoint((await Dns.GetHostAddressesAsync(req.ProxyAddress))[0], req.ProxyPort), cd);
+                var v = new HorizonOutput(new IPEndPoint((await Utils.ResolveDns(req.ProxyAddress)), req.ProxyPort), cd);
                 v.Initialize();
                 _clients[connection.ConnectionId] = cd;
             }

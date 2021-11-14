@@ -10,7 +10,7 @@ namespace horizon_cli.Models
     [Validator(typeof(ProxyModelValidator))]
     public class ProxyModel : ClientModel
     {
-        [Required, Operand(Name = "Portmap", Description = "Mapping of the ports. Follows this format: [local-port]:[proxied-address]:[proxied-port]")] 
+        [Required, Operand(Name = "Portmap", Description = "Mapping of the ports. Follows this format: [inbound-port]:[outbound-address]:[outbound-port]")] 
         public string Portmap { get; set; }
     }
 
@@ -19,27 +19,18 @@ namespace horizon_cli.Models
         public ProxyModelValidator()
         {
             RuleFor(x => x).SetValidator(new ClientModelValidator());
-            RuleFor(p => p.Portmap).NotEmpty().Custom(PortmapIsValid);
+            RuleFor(p => p.Portmap).Custom(PortmapIsValid);
         }
 
         public static void PortmapIsValid(string portmap, CustomContext ctx)
         {
-            var portmapParts = portmap.Split(':');
-            if (portmapParts.Length != 3)
+            if (string.IsNullOrEmpty(portmap))
             {
-                ctx.AddFailure("The specified port map is not valid, the map follows this format: [port]:[address]:[port]");
+                ctx.AddFailure("The specified port map cannot be empty");
                 return;
             }
-
-            if (!int.TryParse(portmapParts[0], out var v) || v is <= 0 or > 65536)
-            {
-                ctx.AddFailure($"The specified port \"{portmapParts[0]}\" in the map is not valid, the map follows this format: [port]:[address]:[port]");
-                return;
-            }
-
-            if (!int.TryParse(portmapParts[2], out var x) || x is <= 0 or > 65536)
-            {
-                ctx.AddFailure($"The specified port \"{portmapParts[2]}\" in the map is not valid, the map follows this format: [port]:[address]:[port]");
+            if (!Extensions.ParseMap(portmap).HasValue){
+                ctx.AddFailure("The specified port map is not valid, the map follows this format: [inbound-port]:[outbound-address]:[outbound-port]");
             }
         }
     }

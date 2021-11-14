@@ -9,7 +9,7 @@ namespace horizon_cli.Models
     [Validator(typeof(ReverseProxyModelValidator))]
     public class ReverseProxyModel : ClientModel
     {
-        [Required, Operand(Name = "Portmap", Description = "Mapping of the ports. Follows this format: [local-port]:[reverse-proxy-port]")] 
+        [Required, Operand(Name = "Portmap", Description = "Mapping of the ports. Follows this format: [inbound-port]:[outbound-address]:[outbound-port]")] 
         public string Portmap { get; set; }
     }
     
@@ -18,7 +18,7 @@ namespace horizon_cli.Models
         public ReverseProxyModelValidator()
         {
             RuleFor(x => x).SetValidator(new ClientModelValidator());
-            RuleFor(x => x.Portmap).NotEmpty().Custom(ProxyModelValidator.PortmapIsValid);
+            RuleFor(x => x.Portmap).Custom(ProxyModelValidator.PortmapIsValid);
         }
     }
 }

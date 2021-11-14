@@ -42,6 +42,7 @@ namespace horizon.Handshake
                 await adp.WriteByteArray(cTokenHash);
                 if (await adp.ReadInt() != 1)
                 {
+                    $"The server has rejected the token provided!".Log(LogLevel.Critical);
                     return (false, null);
                 }
                 // Verify the server's token
@@ -49,6 +50,7 @@ namespace horizon.Handshake
                 // Check if the received token is valid (Ensures server authenticity)
                 if (!serverHash.SequenceEqual(Handshake.GetHCombined(sentBytes, cfg.Token)))
                 {
+                    $"The server responded with an unexpected response, a possible man-in-the middle attack may be occurring!".Log(LogLevel.Critical);
                     // Signal Failure
                     await adp.WriteInt(0);
                     return (false, null);

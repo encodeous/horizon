@@ -8,6 +8,8 @@ using CommandDotNet;
 using FluentValidation;
 using FluentValidation.Attributes;
 using FluentValidation.Validators;
+using horizon;
+using Microsoft.Extensions.Logging;
 using ValidationContext = FluentValidation.ValidationContext;
 using ValidationException = FluentValidation.ValidationException;
 
@@ -27,6 +29,10 @@ namespace horizon_cli.Models
             Description = "The token used to authenticate & encrypt the connection with the client")]
         public string Token { get; set; } = "default";
         
+        [Option(LongName = "log-level", ShortName = "l",
+            Description = "Configures the logging level.")]
+        public LogLevel LoggingLevel { get; set; } = LogLevel.Information;
+        
         [Option(LongName = "whitelist", ShortName = "w",
             Description = "Enables the whitelist filter (blacklist by default)")]
         public bool Whitelist  { get; set; } = false;
@@ -34,7 +40,7 @@ namespace horizon_cli.Models
         [Option(LongName = "filter", ShortName = "f",
             Description =
                 "Allows/disallows (depending on black/whitelist) certain proxy destinations, specify zero or more patterns." +
-                " Format: [host-name-regex]:[port-range-start]:[port-range-end]")]
+                " Format: [port-range-start]:[host-name-regex]:[port-range-end]")]
         public IEnumerable<string> RemotesFilter { get; set; } = new List<string>();
     }
 
@@ -42,8 +48,13 @@ namespace horizon_cli.Models
     {
         public ServerModelValidator()
         {
-            RuleFor(x => x.Bind).NotEmpty().Custom((str,y) =>
+            RuleFor(x => x.Bind).Custom((str,y) =>
             {
+                if (string.IsNullOrEmpty(str))
+                {
+                    y.AddFailure("The specified bind cannot be empty");
+                    return;
+                }
                 if (str.Count(x => x == ':') < 1)
                 {
                     y.AddFailure("Expected one or more colon in the bind format.");
@@ -60,7 +71,6 @@ namespace horizon_cli.Models
                     y.AddFailure($"The port {str[(idx + 1)..]} is invalid.");
                     return;
                 }
-                return;
             });
             
             RuleFor(x => x.Token).NotEmpty()
@@ -77,43 +87,13 @@ namespace horizon_cli.Models
 
         public bool ValidateFilter(string str, CustomContext ctx)
         {
-            if(str.Count(x => x == ':') < 2)
-                return false;
-
-            var id1 = str.LastIndexOf(":", StringComparison.Ordinal);
-            var id2 = str[..id1].LastIndexOf(":", StringComparison.Ordinal);
-            string s1 = str[..id2], s2 = str[(id2+1)..id1], s3 = str[(id1+1)..];
-            if (!IsValidRegex(s1))
+            if (!Extensions.ParseMap(str).HasValue) return false;
+            var (s1, s2, s3) = Extensions.ParseMap(str).Value;
+            if (!Utils.IsValidRegex(s2))
             {
-                ctx.AddFailure($"The specified regex {s1} is not valid");
+                ctx.AddFailure($"The specified regex {s2} is not valid");
                 return false;
             }
-            if(!int.TryParse(s2, out var port) || port is <= 0 or > 65535)
-            {
-                ctx.AddFailure($"The port {s2} is not valid!");
-                return false;
-            }
-            if(!int.TryParse(s3, out var port2) || port2 is <= 0 or > 65535)
-            {
-                ctx.AddFailure($"The port {s3} is not valid!");
-                return false;
-            }
-            return true;
-        }
-        
-        private static bool IsValidRegex(string pattern)
-        {
-            if (string.IsNullOrWhiteSpace(pattern)) return false;
-
-            try
-            {
-                Regex.Match("", pattern);
-            }
-            catch (ArgumentException)
-            {
-                return false;
-            }
-
             return true;
         }
     }

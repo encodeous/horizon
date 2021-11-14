@@ -136,6 +136,8 @@ namespace horizon.Transport
         /// <param name="message"></param>
         private void RemoteDisconnect(DisconnectReason reason = DisconnectReason.Shutdown, string message = null)
         {
+            _disconnectTcs.SetResult();
+            $"Handling remote disconnect...".Log(LogLevel.Trace);
             if (Connected)
             {
                 Connected = false;
@@ -163,6 +165,8 @@ namespace horizon.Transport
             ActionDispatch.Stop();
         }
 
+        private TaskCompletionSource _disconnectTcs = new TaskCompletionSource();
+
         /// <summary>
         /// Disconnect from the remote, use <code>DisconnectReason.Terminated</code> to kill the connection
         /// </summary>
@@ -174,40 +178,40 @@ namespace horizon.Transport
             {
                 if (reason != DisconnectReason.Terminated)
                 {
+                    Task.Run(async () =>
+                    {
+                        await Task.Delay(5000);
+                        if (Connected)
+                        {
+                            // kill connection
+                            await Disconnect(DisconnectReason.Terminated, null);
+                        }
+                        _disconnectTcs.SetResult();
+                    });
                     // Send graceful shutdown message
-                    SendPacket(new DisconnectPacket()
+                    ActionDispatch.Stop();
+                    var packet = new DisconnectPacket()
                     {
                         Reason = reason,
                         StringReason = message
-                    });
-                    Task.Run(async () =>
+                    };
+                    await Adapter.WriteInt((int)packet.PacketId, false);
+                    await packet.SendPacket(Adapter);
+                    await _wsConn.FlushAsync();
+                    
+                    await _disconnectTcs.Task;
+                    
+                    if (!Connected) return;
+                    Connected = false;
+
+                    try
                     {
-                        // Wait for up to 5 seconds, or forcefully terminate the connection
-                        int x = 0;
-                        while (Connected && x < 50)
-                        {
-                            x++;
-                            await Task.Delay(100);
-                        }
-                        // If the connection is still active, kill the connection
-                        if (Connected)
-                        {
-                            try
-                            {
-                                await _wsConn.CloseAsync();
-                            }
-                            catch(Exception e)
-                            {
-                                $"{e.Message} {e.StackTrace}".Log(LogLevel.Trace);
-                            }
-                            Connected = false;
-                            OnDisconnect?.Invoke(DisconnectReason.Terminated, _wsConn.ConnectionId, message, false);
-                        }
-                        else
-                        {
-                            OnDisconnect?.Invoke(reason, _wsConn.ConnectionId, message,false);
-                        }
-                    }).Start();
+                        await _wsConn.CloseAsync();
+                    }
+                    catch(Exception e)
+                    {
+                        $"{e.Message} {e.StackTrace}".Log(LogLevel.Trace);
+                    }
                 }
                 else
                 {
@@ -224,8 +228,8 @@ namespace horizon.Transport
                             $"{e.Message} {e.StackTrace}".Log(LogLevel.Trace);
                         }
                     }
-                    OnDisconnect?.Invoke(reason, _wsConn.ConnectionId, message,false);
                 }
+                OnDisconnect?.Invoke(reason, _wsConn.ConnectionId, message,false);
             }
             try
             {
